@@ -11,7 +11,16 @@ var uuid = const Uuid();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+  await Firebase.initializeApp(
+      options: const FirebaseOptions(
+        apiKey:"AIzaSyCwRUG8HBKqwmECWJNV24yO438G27YVedE",
+      // authDomain: "chattingapp-586b0.firebaseapp.com",
+      projectId: "chattingapp-586b0",
+      storageBucket: "chattingapp-586b0.appspot.com",
+      messagingSenderId: "206222612386",
+      appId: "1:206222612386:android:e7de7e8f1ddbde9cd044fb",
+      ),
+    );
 
   User? currentUser = FirebaseAuth.instance.currentUser;
   if(currentUser != null) {
