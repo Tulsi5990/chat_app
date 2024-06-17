@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:chat_app_lattice/models/UserModel.dart';
 import 'package:chat_app_lattice/models/UIHelper.dart';
 
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -25,101 +24,117 @@ class CompleteProfile extends StatefulWidget {
 }
 
 class _CompleteProfileState extends State<CompleteProfile> {
-
   File? imageFile;
   TextEditingController fullNameController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    fullNameController.text = widget.userModel.fullname ?? "";
+  }
 
   void selectImage(ImageSource source) async {
     XFile? pickedFile = await ImagePicker().pickImage(source: source);
 
-    if(pickedFile != null) {
+    if (pickedFile != null) {
       cropImage(pickedFile);
     }
   }
 
   void cropImage(XFile file) async {
-    File? croppedImage = (await ImageCropper().cropImage(
-        sourcePath: file.path,
-        aspectRatio: CropAspectRatio(ratioX: 1, ratioY: 1),
-        compressQuality: 20
-    )) as File?;
+    CroppedFile? croppedImage = await ImageCropper().cropImage(
+      sourcePath: file.path,
+      aspectRatio: CropAspectRatio(ratioX: 1, ratioY: 1),
+      compressQuality: 20,
+    );
 
-    if(croppedImage != null) {
+    if (croppedImage != null) {
       setState(() {
-        imageFile = croppedImage;
+        imageFile = File(croppedImage.path);
       });
     }
   }
 
   void showPhotoOptions() {
-    showDialog(context: context, builder: (context) {
-      return AlertDialog(
-        title: Text("Upload Profile Picture"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-
-            ListTile(
-              onTap: () {
-                Navigator.pop(context);
-                selectImage(ImageSource.gallery);
-              },
-              leading: Icon(Icons.photo_album),
-              title: Text("Select from Gallery"),
-            ),
-
-            ListTile(
-              onTap: () {
-                Navigator.pop(context);
-                selectImage(ImageSource.camera);
-              },
-              leading: Icon(Icons.camera_alt),
-              title: Text("Take a photo"),
-            ),
-
-          ],
-        ),
-      );
-    });
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text("Upload Profile Picture"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                onTap: () {
+                  Navigator.pop(context);
+                  selectImage(ImageSource.gallery);
+                },
+                leading: Icon(Icons.photo_album),
+                title: Text("Select from Gallery"),
+              ),
+              ListTile(
+                onTap: () {
+                  Navigator.pop(context);
+                  selectImage(ImageSource.camera);
+                },
+                leading: Icon(Icons.camera_alt),
+                title: Text("Take a photo"),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void checkValues() {
     String fullname = fullNameController.text.trim();
 
-    if(fullname == "" || imageFile == null) {
+    if (fullname.isEmpty || imageFile == null) {
       print("Please fill all the fields");
       UIHelper.showAlertDialog(context, "Incomplete Data", "Please fill all the fields and upload a profile picture");
-    }
-    else {
+    } else {
       log("Uploading data..");
       uploadData();
     }
   }
 
   void uploadData() async {
-
     UIHelper.showLoadingDialog(context, "Uploading image..");
 
-    UploadTask uploadTask = FirebaseStorage.instance.ref("profilepictures").child(widget.userModel.uid.toString()).putFile(imageFile!);
+    try {
+      UploadTask uploadTask = FirebaseStorage.instance
+          .ref("profilepictures")
+          .child(widget.userModel.uid.toString())
+          .putFile(imageFile!);
 
-    TaskSnapshot snapshot = await uploadTask;
+      TaskSnapshot snapshot = await uploadTask;
 
-    String? imageUrl = await snapshot.ref.getDownloadURL();
-    String? fullname = fullNameController.text.trim();
+      String imageUrl = await snapshot.ref.getDownloadURL();
+      String fullname = fullNameController.text.trim();
 
-    widget.userModel.fullname = fullname;
-    widget.userModel.profilepic = imageUrl;
+      widget.userModel.fullname = fullname;
+      widget.userModel.profilepic = imageUrl;
 
-    await FirebaseFirestore.instance.collection("users").doc(widget.userModel.uid).set(widget.userModel.toMap()).then((value) {
-      log("Data uploaded!");
-      Navigator.popUntil(context, (route) => route.isFirst);
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) {
-          return HomePage(userModel: widget.userModel, firebaseUser: widget.firebaseUser);
-        }),
-      );
-    });
+      await FirebaseFirestore.instance
+          .collection("users")
+          .doc(widget.userModel.uid)
+          .set(widget.userModel.toMap())
+          .then((value) {
+        log("Data uploaded!");
+        Navigator.popUntil(context, (route) => route.isFirst);
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) {
+            return HomePage(userModel: widget.userModel, firebaseUser: widget.firebaseUser);
+          }),
+        );
+      });
+    } catch (e) {
+      log("Error uploading data: $e");
+      Navigator.pop(context);
+      UIHelper.showAlertDialog(context, "Error", "Something went wrong while uploading the data");
+    }
   }
 
   @override
@@ -132,14 +147,10 @@ class _CompleteProfileState extends State<CompleteProfile> {
       ),
       body: SafeArea(
         child: Container(
-          padding: EdgeInsets.symmetric(
-              horizontal: 40
-          ),
+          padding: EdgeInsets.symmetric(horizontal: 40),
           child: ListView(
             children: [
-
-              SizedBox(height: 20,),
-
+              SizedBox(height: 20),
               CupertinoButton(
                 onPressed: () {
                   showPhotoOptions();
@@ -148,21 +159,15 @@ class _CompleteProfileState extends State<CompleteProfile> {
                 child: CircleAvatar(
                   radius: 60,
                   backgroundImage: (imageFile != null) ? FileImage(imageFile!) : null,
-                  child: (imageFile == null) ? Icon(Icons.person, size: 60,) : null,
+                  child: (imageFile == null) ? Icon(Icons.person, size: 60) : null,
                 ),
               ),
-
-              SizedBox(height: 20,),
-
+              SizedBox(height: 20),
               TextField(
                 controller: fullNameController,
-                decoration: InputDecoration(
-                  labelText: "Full Name",
-                ),
+                decoration: InputDecoration(labelText: "Full Name"),
               ),
-
-              SizedBox(height: 20,),
-
+              SizedBox(height: 20),
               CupertinoButton(
                 onPressed: () {
                   checkValues();
@@ -170,7 +175,6 @@ class _CompleteProfileState extends State<CompleteProfile> {
                 color: Theme.of(context).colorScheme.secondary,
                 child: Text("Submit"),
               ),
-
             ],
           ),
         ),
