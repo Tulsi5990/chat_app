@@ -13,36 +13,34 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
       options: const FirebaseOptions(
-        apiKey:"AIzaSyCwRUG8HBKqwmECWJNV24yO438G27YVedE",
-      // authDomain: "chattingapp-586b0.firebaseapp.com",
-      projectId: "chattingapp-586b0",
-      storageBucket: "chattingapp-586b0.appspot.com",
-      messagingSenderId: "206222612386",
-      appId: "1:206222612386:android:e7de7e8f1ddbde9cd044fb",
+        apiKey: "AIzaSyCwRUG8HBKqwmECWJNV24yO438G27YVedE",
+        // authDomain: "chattingapp-586b0.firebaseapp.com",
+        projectId: "chattingapp-586b0",
+        storageBucket: "chattingapp-586b0.appspot.com",
+        messagingSenderId: "206222612386",
+        appId: "1:206222612386:android:e7de7e8f1ddbde9cd044fb",
       ),
-    );
+  );
+  
 
   User? currentUser = FirebaseAuth.instance.currentUser;
-  if(currentUser != null) {
+  if (currentUser != null) {
     // Logged In
     UserModel? thisUserModel = await FirebaseHelper.getUserModelById(currentUser.uid);
-    if(thisUserModel != null) {
+    if (thisUserModel != null) {
       runApp(MyAppLoggedIn(userModel: thisUserModel, firebaseUser: currentUser));
+    } else {
+      runApp(const MyApp());
     }
-    else {
-      runApp( const MyApp());
-    }
-  }
-  else {
+  } else {
     // Not logged in
     runApp(const MyApp());
   }
 }
 
-
 // Not Logged In
 class MyApp extends StatelessWidget {
-  const MyApp({ Key? key }) : super(key: key);
+  const MyApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -52,7 +50,6 @@ class MyApp extends StatelessWidget {
     );
   }
 }
-
 
 // Already Logged In
 class MyAppLoggedIn extends StatelessWidget {
@@ -69,4 +66,6 @@ class MyAppLoggedIn extends StatelessWidget {
     );
   }
 }
+
+
 
