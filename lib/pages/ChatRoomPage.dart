@@ -1,6 +1,5 @@
 import 'dart:convert'; // Import for JSON encoding and decoding
 import 'dart:developer';
-
 import 'package:chat_app_lattice/main.dart';
 import 'package:chat_app_lattice/models/UserModel.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
