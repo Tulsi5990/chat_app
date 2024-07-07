@@ -1,10 +1,11 @@
 import 'dart:convert'; // Import for JSON encoding and decoding
-import 'dart:developer';
+//import 'dart:developer';
 import 'package:chat_app_lattice/main.dart';
 import 'package:chat_app_lattice/models/UserModel.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:logger/logger.dart';
 import 'package:chat_app_lattice/models/ChatRoomModel.dart';
 import 'package:chat_app_lattice/models/MessageModel.dart';
 import 'package:chat_app_lattice/encryption/lwe.dart'; // Import the lwe.dart
@@ -23,7 +24,11 @@ class ChatRoomPage extends StatefulWidget {
 
 class _ChatRoomPageState extends State<ChatRoomPage> {
   TextEditingController messageController = TextEditingController();
-  final LWE lwe = LWE(); // Instantiate the LWE class
+  final LWE lwe = LWE();
+  final Logger log = Logger();
+
+  final KeyManagement keyManagement = KeyManagement();// Instantiate the LWE class
+
 
   void sendMessage() async {
     String msg = messageController.text.trim();
@@ -32,16 +37,20 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
     if (msg != "") {
       // Generate encryption keys
       final keys = lwe.publicKey();
+
       final pk = keys['pk'];
       final pk_t = keys['pk_t'];
       final A = keys['A'];
+      await lwe.storeKeys(keys);
 
       // Encrypt the message
       final storedBits = lwe.stringToBits(msg);
-      final encrypted = lwe.encryption(storedBits, pk, pk_t, A);
+      // ignore: unnecessary_non_null_assertion
+      final encrypted = lwe.encryption(storedBits!, pk!, pk_t!, A!);
 
       // Convert encryptedText to JSON string
       String encryptedText = jsonEncode(encrypted['encryptedText']);
+      log.i("Encrypted Text: $encryptedText");
 
       // Send Message
       MessageModel newMessage = MessageModel(
@@ -66,9 +75,66 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
           .doc(widget.chatroom.chatroomid)
           .set(widget.chatroom.toMap());
 
-      log("Message Sent!");
+      log.i("Message Sent!");
     }
   }
+  Future<String> decryptMessage(String cipherText) async {
+    try {
+      final keys = await lwe.getKeys();
+      final List<int> sk = keys['sk'] ?? [];
+      final List<int> sk_t = keys['sk_t'] ?? [];
+
+      if (sk.isEmpty || sk_t.isEmpty) {
+        log.e("Decryption keys are missing");
+        return "Error decrypting message: Missing keys";
+      }
+
+      log.i("Decryption Keys: sk=$sk, sk_t=$sk_t");
+
+      final List<List<int>> encryptedText = List<List<int>>.from(
+          jsonDecode(cipherText).map((x) => List<int>.from(x))
+      );
+      log.i("Encrypted Text Retrieved: $encryptedText");
+
+      log.i("Starting decryption process...");
+
+      // Assuming lwe.decryption returns a String
+      final String decryptedString = lwe.decryption(encryptedText, sk, sk_t);
+      log.i("Decrypted String: $decryptedString");
+
+      return decryptedString;
+    } catch (e) {
+      log.e("Error decrypting message: $e");
+      return "Error decrypting message";
+    }
+  }
+
+
+  /*Future<String> decryptMessage(String cipherText) async {
+    try {
+      final keys = await keyManagement.lwe.getKeys();
+      final sk = keys['sk']!;
+      final sk_t = keys['sk_t']!;
+
+      final encryptedText = List<List<int>>.from(jsonDecode(cipherText).map((x) => List<int>.from(x)));
+      log.i("Decryption Keys: sk=${sk.toString()}, sk_t=${sk_t.toString()}");
+      log.i("Encrypted Text Retrieved: ${encryptedText.toString()}");
+
+      // Add logging for each intermediate step in decryption
+      log.i("Starting decryption process...");
+
+      final decryptedMessage = lwe.decryption(encryptedText, sk, sk_t);
+
+      log.i("Decrypted Message: $decryptedMessage");
+
+      return decryptedMessage;
+    } catch (e) {
+      log.e("Error decrypting message: $e");
+      return "Error decrypting message";
+    }
+  }*/
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -111,28 +177,40 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                             itemBuilder: (context, index) {
                               MessageModel currentMessage = MessageModel.fromMap(dataSnapshot.docs[index].data() as Map<String, dynamic>);
 
-                              return Row(
-                                mainAxisAlignment: (currentMessage.sender == widget.userModel.uid)
-                                    ? MainAxisAlignment.end
-                                    : MainAxisAlignment.start,
-                                children: [
-                                  Container(
-                                    margin: EdgeInsets.symmetric(vertical: 2),
-                                    padding: EdgeInsets.symmetric(vertical: 10, horizontal: 10),
-                                    decoration: BoxDecoration(
-                                      color: (currentMessage.sender == widget.userModel.uid)
-                                          ? Colors.grey
-                                          : Theme.of(context).colorScheme.secondary,
-                                      borderRadius: BorderRadius.circular(5),
-                                    ),
-                                    child: Text(
-                                      currentMessage.text.toString(),
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                              return FutureBuilder(
+                                future: decryptMessage(currentMessage.cipherText!),
+                                builder: (context, AsyncSnapshot<String> decryptedSnapshot) {
+                                  if (decryptedSnapshot.connectionState == ConnectionState.waiting) {
+                                    return CircularProgressIndicator();
+                                  } else if (decryptedSnapshot.hasError) {
+                                    return Text("Error decrypting message");
+                                  } else {
+                                    String decryptedMessage = decryptedSnapshot.data!;
+                                    return Row(
+                                      mainAxisAlignment: (currentMessage.sender == widget.userModel.uid)
+                                          ? MainAxisAlignment.end
+                                          : MainAxisAlignment.start,
+                                      children: [
+                                        Container(
+                                          margin: EdgeInsets.symmetric(vertical: 2),
+                                          padding: EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+                                          decoration: BoxDecoration(
+                                            color: (currentMessage.sender == widget.userModel.uid)
+                                                ? Colors.grey
+                                                : Theme.of(context).colorScheme.secondary,
+                                            borderRadius: BorderRadius.circular(5),
+                                          ),
+                                          child: Text(
+                                            decryptedMessage,
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  }
+                                },
                               );
                             },
                           );

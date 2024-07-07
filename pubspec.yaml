@@ -42,6 +42,8 @@ dependencies:
   image_picker: ^1.0.8
   uuid: ^4.4.0
   flutter_secure_storage: ^5.0.2
+  shared_preferences: ^2.0.13
+  logger: ^2.3.0
 
 dev_dependencies:
   flutter_test:

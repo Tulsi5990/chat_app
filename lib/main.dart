@@ -6,6 +6,7 @@ import 'package:chat_app_lattice/models/UserModel.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:uuid/uuid.dart';
 import 'package:chat_app_lattice/pages/HomePage.dart';
+import 'package:chat_app_lattice/encryption/lwe.dart';
 
 var uuid = const Uuid();
 
@@ -21,7 +22,8 @@ void main() async {
         appId: "1:206222612386:android:e7de7e8f1ddbde9cd044fb",
       ),
   );
-  
+   KeyManagement keyManagement = KeyManagement();
+  await keyManagement.generateAndStoreKeys();
 
   User? currentUser = FirebaseAuth.instance.currentUser;
   if (currentUser != null) {
