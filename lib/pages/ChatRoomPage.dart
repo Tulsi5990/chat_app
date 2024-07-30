@@ -30,109 +30,171 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   final KeyManagement keyManagement = KeyManagement();// Instantiate the LWE class
 
 
-  void sendMessage() async {
-    String msg = messageController.text.trim();
-    messageController.clear();
+  // void sendMessage() async {
+  //   String msg = messageController.text.trim();
+  //   messageController.clear();
 
-    if (msg != "") {
-      // Generate encryption keys
-      final keys = lwe.publicKey();
+  //   if (msg != "") {
+  //     // Generate encryption keys
+  //     final keys = lwe.publicKey();
 
-      final pk = keys['pk'];
-      final pk_t = keys['pk_t'];
-      final A = keys['A'];
-      await lwe.storeKeys(keys);
+  //     final pk = keys['pk'];
+  //     final pk_t = keys['pk_t'];
+  //     final A = keys['A'];
+  //     await lwe.storeKeys(keys);
 
-      // Encrypt the message
-      final storedBits = lwe.stringToBits(msg);
-      // ignore: unnecessary_non_null_assertion
-      final encrypted = lwe.encryption(storedBits!, pk!, pk_t!, A!);
+  //     // Encrypt the message
+  //     final storedBits = lwe.stringToBits(msg);
+  //     // ignore: unnecessary_non_null_assertion
+  //     final encrypted = lwe.encryption(storedBits!, pk!, pk_t!, A!);
 
-      // Convert encryptedText to JSON string
-      String encryptedText = jsonEncode(encrypted['encryptedText']);
-      log.i("Encrypted Text: $encryptedText");
+  //     // Convert encryptedText to JSON string
+  //     String encryptedText = jsonEncode(encrypted['encryptedText']);
+  //     log.i("Encrypted Text: $encryptedText");
 
-      // Send Message
-      MessageModel newMessage = MessageModel(
-        messageid: uuid.v1(),
-        sender: widget.userModel.uid,
-        createdon: DateTime.now(),
-        text: msg,
-        cipherText: encryptedText,
-        seen: false,
-      );
+  //     // Send Message
+  //     MessageModel newMessage = MessageModel(
+  //       messageid: uuid.v1(),
+  //       sender: widget.userModel.uid,
+  //       createdon: DateTime.now(),
+  //       text: msg,
+  //       cipherText: encryptedText,
+  //       seen: false,
+  //     );
 
-      await FirebaseFirestore.instance
-          .collection("chatrooms")
-          .doc(widget.chatroom.chatroomid)
-          .collection("messages")
-          .doc(newMessage.messageid)
-          .set(newMessage.toMap());
+  //     await FirebaseFirestore.instance
+  //         .collection("chatrooms")
+  //         .doc(widget.chatroom.chatroomid)
+  //         .collection("messages")
+  //         .doc(newMessage.messageid)
+  //         .set(newMessage.toMap());
 
-      widget.chatroom.lastMessage = msg;
-      await FirebaseFirestore.instance
-          .collection("chatrooms")
-          .doc(widget.chatroom.chatroomid)
-          .set(widget.chatroom.toMap());
+  //     widget.chatroom.lastMessage = msg;
+  //     await FirebaseFirestore.instance
+  //         .collection("chatrooms")
+  //         .doc(widget.chatroom.chatroomid)
+  //         .set(widget.chatroom.toMap());
 
-      log.i("Message Sent!");
-    }
+  //     log.i("Message Sent!");
+  //   }
+  // }
+
+void sendMessage() async {
+  String msg = messageController.text.trim();
+  messageController.clear();
+
+  if (msg != "") {
+    // Retrieve stored keys
+    final keys = await lwe.getKeys();
+
+    final pk = keys['pk'];
+    final pk_t = keys['pk_t'];
+    final A = keys['A'];
+
+    // Encrypt the message
+    final storedBits = lwe.stringToBits(msg);
+    final encrypted = lwe.encryption(storedBits!, pk!, pk_t!, A!);
+
+    // Convert encryptedText to JSON string
+    String encryptedText = jsonEncode(encrypted['encryptedText']);
+    log.i("Encrypted Text: $encryptedText");
+
+    // Send Message
+    MessageModel newMessage = MessageModel(
+      messageid: uuid.v1(),
+      sender: widget.userModel.uid,
+      createdon: DateTime.now(),
+      text: msg,
+      cipherText: encryptedText,
+      seen: false,
+    );
+
+    await FirebaseFirestore.instance
+        .collection("chatrooms")
+        .doc(widget.chatroom.chatroomid)
+        .collection("messages")
+        .doc(newMessage.messageid)
+        .set(newMessage.toMap());
+
+    widget.chatroom.lastMessage = msg;
+    await FirebaseFirestore.instance
+        .collection("chatrooms")
+        .doc(widget.chatroom.chatroomid)
+        .set(widget.chatroom.toMap());
+
+    log.i("Message Sent!");
   }
+}
+
+
+
+
+
+  // Future<String> decryptMessage(String cipherText) async {
+  //   try {
+  //     final keys = await lwe.getKeys();
+  //     final List<int> sk = keys['sk'] ?? [];
+  //     final List<int> sk_t = keys['sk_t'] ?? [];
+
+  //     if (sk.isEmpty || sk_t.isEmpty) {
+  //       log.e("Decryption keys are missing");
+  //       return "Error decrypting message: Missing keys";
+  //     }
+
+  //     log.i("Decryption Keys: sk=$sk, sk_t=$sk_t");
+
+  //     final List<List<int>> encryptedText = List<List<int>>.from(
+  //         jsonDecode(cipherText).map((x) => List<int>.from(x))
+  //     );
+  //     log.i("Encrypted Text Retrieved: $encryptedText");
+
+  //     log.i("Starting decryption process...");
+
+  //     // Assuming lwe.decryption returns a String
+  //     final String decryptedString = lwe.decryption(encryptedText, sk, sk_t);
+  //     log.i("Decrypted String: $decryptedString");
+
+  //     return decryptedString;
+  //   } catch (e) {
+  //     log.e("Error decrypting message: $e");
+  //     return "Error decrypting message";
+  //   }
+  // }
+
+
   Future<String> decryptMessage(String cipherText) async {
-    try {
-      final keys = await lwe.getKeys();
-      final List<int> sk = keys['sk'] ?? [];
-      final List<int> sk_t = keys['sk_t'] ?? [];
+  try {
+    final keys = await lwe.getKeys();
+    final List<int> sk = keys['sk'] ?? [];
+    final List<int> sk_t = keys['sk_t'] ?? [];
 
-      if (sk.isEmpty || sk_t.isEmpty) {
-        log.e("Decryption keys are missing");
-        return "Error decrypting message: Missing keys";
-      }
-
-      log.i("Decryption Keys: sk=$sk, sk_t=$sk_t");
-
-      final List<List<int>> encryptedText = List<List<int>>.from(
-          jsonDecode(cipherText).map((x) => List<int>.from(x))
-      );
-      log.i("Encrypted Text Retrieved: $encryptedText");
-
-      log.i("Starting decryption process...");
-
-      // Assuming lwe.decryption returns a String
-      final String decryptedString = lwe.decryption(encryptedText, sk, sk_t);
-      log.i("Decrypted String: $decryptedString");
-
-      return decryptedString;
-    } catch (e) {
-      log.e("Error decrypting message: $e");
-      return "Error decrypting message";
+    if (sk.isEmpty || sk_t.isEmpty) {
+      log.e("Decryption keys are missing");
+      return "Error decrypting message: Missing keys";
     }
+
+    log.i("Decryption Keys: sk=$sk, sk_t=$sk_t");
+
+    final List<List<int>> encryptedText = List<List<int>>.from(
+        jsonDecode(cipherText).map((x) => List<int>.from(x))
+    );
+    log.i("Encrypted Text Retrieved: $encryptedText");
+
+    log.i("Starting decryption process...");
+
+    final String decryptedString = lwe.decryption(encryptedText, sk, sk_t);
+    log.i("Decrypted String: $decryptedString");
+
+    return decryptedString;
+  } catch (e) {
+    log.e("Error decrypting message: $e");
+    return "Error decrypting message";
   }
+}
 
 
-  /*Future<String> decryptMessage(String cipherText) async {
-    try {
-      final keys = await keyManagement.lwe.getKeys();
-      final sk = keys['sk']!;
-      final sk_t = keys['sk_t']!;
 
-      final encryptedText = List<List<int>>.from(jsonDecode(cipherText).map((x) => List<int>.from(x)));
-      log.i("Decryption Keys: sk=${sk.toString()}, sk_t=${sk_t.toString()}");
-      log.i("Encrypted Text Retrieved: ${encryptedText.toString()}");
 
-      // Add logging for each intermediate step in decryption
-      log.i("Starting decryption process...");
-
-      final decryptedMessage = lwe.decryption(encryptedText, sk, sk_t);
-
-      log.i("Decrypted Message: $decryptedMessage");
-
-      return decryptedMessage;
-    } catch (e) {
-      log.e("Error decrypting message: $e");
-      return "Error decrypting message";
-    }
-  }*/
 
 
 

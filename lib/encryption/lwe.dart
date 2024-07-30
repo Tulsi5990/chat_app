@@ -244,13 +244,31 @@ class LWE {
   }
 }
 
+// class KeyManagement {
+//   final LWE lwe = LWE();
+
+//   Future<void> generateAndStoreKeys() async {
+//     // log.i("Generating and storing new keys...");
+//     Map<String, List<int>> keys = lwe.publicKey();
+
+//     await lwe.storeKeys(keys);
+//   }
+// }
+
 class KeyManagement {
   final LWE lwe = LWE();
+  final Logger log = Logger();
 
   Future<void> generateAndStoreKeys() async {
-    // log.i("Generating and storing new keys...");
-    Map<String, List<int>> keys = lwe.publicKey();
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    bool keysExist = prefs.containsKey('sk') && prefs.containsKey('sk_t') && prefs.containsKey('pk') && prefs.containsKey('pk_t') && prefs.containsKey('A');
 
-    await lwe.storeKeys(keys);
+    if (!keysExist) {
+      log.i("Generating and storing new keys...");
+      Map<String, List<int>> keys = lwe.publicKey();
+      await lwe.storeKeys(keys);
+    } else {
+      log.i("Keys already exist. No need to generate new keys.");
+    }
   }
 }
