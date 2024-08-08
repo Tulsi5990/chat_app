@@ -12,10 +12,10 @@ import 'package:logger/logger.dart';
 import 'package:chat_app_lattice/models/ChatRoomModel.dart';
 import 'package:chat_app_lattice/models/MessageModel.dart';
 import 'package:chat_app_lattice/encryption/lwe.dart'; // Import the lwe.dart
-// import 'package:permission_handler/permission_handler.dart';
 import 'package:video_player/video_player.dart';
-
 import 'package:uuid/uuid.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:chat_app_lattice/fullScreen/full_screen_image.dart';
 import 'package:chat_app_lattice/fullScreen/full_screen_video.dart';
 
@@ -272,7 +272,7 @@ Future<void> sendMessage() async {
 
 
 
-  Widget _buildMessage(MessageModel message) {
+Widget _buildMessage(MessageModel message) {
   if (message.fileUrl != null) {
     if (message.fileType == 'image') {
       return Align(
@@ -290,14 +290,20 @@ Future<void> sendMessage() async {
           },
           child: Container(
             margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-            constraints: BoxConstraints(
-              maxWidth: 200, // Adjust width as needed
+            width: 140, // Square dimensions
+            height: 140, // Square dimensions
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey, width: 3),
+              borderRadius: BorderRadius.circular(8),
             ),
             child: Hero(
               tag: message.fileUrl!,
-              child: Image.network(
-                message.fileUrl!,
-                fit: BoxFit.cover,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  message.fileUrl!,
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
           ),
@@ -319,10 +325,16 @@ Future<void> sendMessage() async {
           },
           child: Container(
             margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-            constraints: BoxConstraints(
-              maxWidth: 200, // Adjust width as needed
+            width: 140, // Square dimensions
+            height: 140, // Square dimensions
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey, width: 3),
+              borderRadius: BorderRadius.circular(8),
             ),
-            child: VideoThumbnailWidget(message.fileUrl!),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: VideoThumbnailWidget(message.fileUrl!),
+            ),
           ),
         ),
       );
@@ -366,9 +378,9 @@ Future<void> sendMessage() async {
       },
     );
   }
-
   return Container();
 }
+
 
 
 
@@ -497,34 +509,71 @@ Future<void> sendMessage() async {
 }
 
 
-class VideoThumbnailWidget extends StatelessWidget {
+
+class VideoThumbnailWidget extends StatefulWidget {
   final String videoUrl;
 
   const VideoThumbnailWidget(this.videoUrl, {Key? key}) : super(key: key);
 
   @override
+  _VideoThumbnailWidgetState createState() => _VideoThumbnailWidgetState();
+}
+
+class _VideoThumbnailWidgetState extends State<VideoThumbnailWidget> {
+  late Future<String?> _thumbnail;
+
+  @override
+  void initState() {
+    super.initState();
+    _thumbnail = _generateThumbnail(widget.videoUrl);
+  }
+
+  Future<String?> _generateThumbnail(String videoUrl) async {
+    final directory = await getTemporaryDirectory();
+    final thumbnailPath = await VideoThumbnail.thumbnailFile(
+      video: videoUrl,
+      thumbnailPath: directory.path,
+      imageFormat: ImageFormat.PNG,
+      maxHeight: 120, // Adjust the height as needed
+      quality: 75,
+    );
+    return thumbnailPath;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Stack(
-        children: [
-          // Use a placeholder thumbnail or the first frame of the video
-          Image.network(videoUrl, fit: BoxFit.cover),
-          Center(
-            child: Icon(
-              Icons.play_circle_fill,
-              color: Colors.white,
-              size: 50,
-            ),
-          ),
-        ],
-      ),
+    return FutureBuilder<String?>(
+      future: _thumbnail,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return CircularProgressIndicator();
+        } else if (snapshot.hasError || !snapshot.hasData) {
+          return Center(child: Icon(Icons.error));
+        } else {
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              Image.file(
+                File(snapshot.data!),
+                fit: BoxFit.cover,
+                width: 140, // Square dimensions
+                height: 140, // Square dimensions
+              ),
+              Icon(
+                Icons.play_circle_fill,
+                color: Colors.white,
+                size: 40, // Adjust the size of the play button as needed
+              ),
+            ],
+          );
+        }
+      },
     );
   }
 }
+
+
+
 class VideoPlayerWidget extends StatefulWidget {
   final String videoUrl;
 
