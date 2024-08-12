@@ -39,6 +39,7 @@ class MessageModel {
   final String? fileUrl;
   final String? fileType;
   final bool? seen;
+  final String? fileName;
 
   MessageModel({
     this.messageid,
@@ -48,6 +49,7 @@ class MessageModel {
     this.createdon,
     this.cipherText,
     this.fileUrl,
+    this.fileName,
     this.fileType,
   });
 
@@ -61,6 +63,7 @@ class MessageModel {
       cipherText: data['cipherText'],
       fileUrl: data['fileUrl'],
       fileType: data['fileType'],
+      fileName:data['fileName'],
     );
   }
 
@@ -74,6 +77,7 @@ class MessageModel {
       'cipherText': cipherText,
       'fileUrl': fileUrl,
       'fileType': fileType,
+      'fileName':fileName,
     };
   }
 }

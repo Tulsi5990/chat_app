@@ -118,6 +118,7 @@ Future<void> _pickImageOrVideoOrPDF() async {
           .collection('messages')
           .doc(messageId);
       await messageRef.set({
+         'messageid': messageId,
         'fileUrl': downloadURL,
         'fileType': fileType,
         'sender': widget.userModel.uid,
@@ -179,6 +180,7 @@ Future<void> _pickImageOrVideoOrPDF() async {
           .collection("messages")
           .doc(newMessage.messageid)
           .set(newMessage.toMap());
+          
 
       widget.chatroom.lastMessage = msg;
       await FirebaseFirestore.instance
@@ -228,6 +230,43 @@ Future<void> _launchURL(String url) async {
 
 
 
+Future<void> _showDeleteDialog(String messageId) async {
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: Text('Delete Message'),
+        content: Text('Are you sure you want to delete this message?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await _deleteMessage(messageId);
+              Navigator.pop(context);
+            },
+            child: Text('Delete'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+Future<void> _deleteMessage(String messageId) async {
+  await FirebaseFirestore.instance
+      .collection("chatrooms")
+      .doc(widget.chatroom.chatroomid)
+      .collection("messages")
+      .doc(messageId)
+      .delete();
+
+  log.i("Message Deleted!");
+}
+
+
 
 
   Widget _buildMessage(MessageModel message) {
@@ -238,6 +277,9 @@ Future<void> _launchURL(String url) async {
               ? Alignment.centerRight
               : Alignment.centerLeft,
           child: GestureDetector(
+            onLongPress: () {
+            _showDeleteDialog(message.messageid!);
+          },
             onTap: () {
               Navigator.push(
                 context,
@@ -274,6 +316,9 @@ Future<void> _launchURL(String url) async {
               ? Alignment.centerRight
               : Alignment.centerLeft,
           child: GestureDetector(
+            onLongPress: () {
+            _showDeleteDialog(message.messageid!);
+          },
             onTap: () {
               Navigator.push(
                 context,
@@ -299,13 +344,18 @@ Future<void> _launchURL(String url) async {
           ),
         );
       } else if (message.fileType == 'pdf') {
+       String fileName = message.fileUrl != null ? p.basename(message.fileUrl!) : 'Unknown.pdf';
         return Align(
           alignment: message.sender == widget.userModel.uid
               ? Alignment.centerRight
               : Alignment.centerLeft,
           child: GestureDetector(
-  onTap: () async {
-    try {
+             onLongPress: () {
+              print("Long press detected on message ID: ${message.messageid}");
+              _showDeleteDialog(message.messageid!);
+            },
+         onTap: () async {
+       try {
       await _launchURL(message.fileUrl!);
     } catch (e) {
       log.e('Could not launch ${message.fileUrl!}');
@@ -324,9 +374,15 @@ Future<void> _launchURL(String url) async {
       children: [
         Icon(Icons.picture_as_pdf, size: 50, color: Colors.red),
         Text(
-          'Open PDF',
-          style: TextStyle(fontSize: 14),
-        ),
+                  fileName, // Display the filename here
+                  style: TextStyle(fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 5),
+                Text(
+                  'Open PDF',
+                  style: TextStyle(fontSize: 14),
+                ),
       ],
     ),
   ),
@@ -343,7 +399,12 @@ Future<void> _launchURL(String url) async {
           } else if (snapshot.hasError) {
             return Text("Error: ${snapshot.error}");
           } else {
-            return Align(
+            return  GestureDetector(
+            onLongPress: () {
+              print("Long press detected on message ID: ${message.messageid}");
+              _showDeleteDialog(message.messageid!);
+            },
+            child:Align(
               alignment: message.sender == widget.userModel.uid
                   ? Alignment.centerRight
                   : Alignment.centerLeft,
@@ -361,6 +422,7 @@ Future<void> _launchURL(String url) async {
                   style: TextStyle(fontSize: 16, color: Colors.black),
                 ),
               ),
+            ),
             );
           }
         },
