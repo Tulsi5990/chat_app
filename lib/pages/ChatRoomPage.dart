@@ -1,5 +1,5 @@
-import 'dart:convert'; // Import for JSON encoding and decoding
-import 'dart:io'; // Import for File
+import 'dart:convert';
+import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:chat_app_lattice/main.dart';
 import 'package:chat_app_lattice/models/UserModel.dart';
@@ -11,13 +11,15 @@ import 'package:image_picker/image_picker.dart';
 import 'package:logger/logger.dart';
 import 'package:chat_app_lattice/models/ChatRoomModel.dart';
 import 'package:chat_app_lattice/models/MessageModel.dart';
-import 'package:chat_app_lattice/encryption/lwe.dart'; // Import the lwe.dart
+import 'package:chat_app_lattice/encryption/lwe.dart';
 import 'package:video_player/video_player.dart';
 import 'package:uuid/uuid.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:chat_app_lattice/fullScreen/full_screen_image.dart';
 import 'package:chat_app_lattice/fullScreen/full_screen_video.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ChatRoomPage extends StatefulWidget {
   final UserModel targetUser;
@@ -25,7 +27,13 @@ class ChatRoomPage extends StatefulWidget {
   final UserModel userModel;
   final User firebaseUser;
 
-  const ChatRoomPage({Key? key, required this.targetUser, required this.chatroom, required this.userModel, required this.firebaseUser}) : super(key: key);
+  const ChatRoomPage({
+    Key? key,
+    required this.targetUser,
+    required this.chatroom,
+    required this.userModel,
+    required this.firebaseUser,
+  }) : super(key: key);
 
   @override
   _ChatRoomPageState createState() => _ChatRoomPageState();
@@ -39,9 +47,9 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   final Uuid uuid = Uuid();
   XFile? pickedFile;
 
-  Future<void> _pickImageOrVideo() async {
-  // Show options to choose between image or video
-  final action = await showDialog<int>(
+  
+Future<void> _pickImageOrVideoOrPDF() async {
+  final action = await showDialog<int>( 
     context: context,
     builder: (BuildContext context) {
       return AlertDialog(
@@ -55,137 +63,85 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
             onPressed: () => Navigator.pop(context, 2),
             child: Text('Video'),
           ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 3),
+            child: Text('PDF'),
+          ),
         ],
       );
     },
   );
 
   if (action != null) {
-    final ImagePicker _picker = ImagePicker();
-    XFile? pickedFile;
-
     if (action == 1) {
       pickedFile = await _picker.pickImage(source: ImageSource.gallery);
     } else if (action == 2) {
       pickedFile = await _picker.pickVideo(source: ImageSource.gallery);
+    } else if (action == 3) {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+      );
+
+      if (result != null && result.files.single.path != null) {
+        pickedFile = XFile(result.files.single.path!);
+      }
     }
 
     if (pickedFile != null) {
-      File file = File(pickedFile.path);
+      File file = File(pickedFile!.path);
       String messageId = uuid.v1();
-      String fileType = pickedFile.path.endsWith('.mp4') ? 'video' : 'image';
+      String fileType = pickedFile!.path.endsWith('.mp4')
+          ? 'video'
+          : pickedFile!.path.endsWith('.pdf')
+              ? 'pdf'
+              : 'image';
       await uploadFile(file, widget.chatroom.chatroomid!, messageId, fileType);
     }
   }
 }
 
+  Future<void> uploadFile(
+      File file, String chatroomId, String messageId, String fileType) async {
+    try {
+      final storageRef = FirebaseStorage.instance.ref();
+      final fileRef = storageRef.child(
+          'chatrooms/$chatroomId/$messageId.${fileType == 'image' ? 'jpg' : fileType == 'video' ? 'mp4' : 'pdf'}');
 
-  
-  
-Future<void> uploadFile(File file, String chatroomId, String messageId, String fileType) async {
-  try {
-    final storageRef = FirebaseStorage.instance.ref();
-    final fileRef = storageRef.child('chatrooms/$chatroomId/$messageId.${fileType == 'image' ? 'jpg' : 'mp4'}');
+      await fileRef.putFile(file);
 
-    await fileRef.putFile(file);
+      final downloadURL = await fileRef.getDownloadURL();
 
-    final downloadURL = await fileRef.getDownloadURL();
+      final messageRef = FirebaseFirestore.instance
+          .collection('chatrooms')
+          .doc(chatroomId)
+          .collection('messages')
+          .doc(messageId);
+      await messageRef.set({
+        'fileUrl': downloadURL,
+        'fileType': fileType,
+        'sender': widget.userModel.uid,
+        'createdon': DateTime.now(),
+        'text': '',
+        'cipherText': '',
+        'seen': false,
+      }, SetOptions(merge: true));
 
-    final messageRef = FirebaseFirestore.instance.collection('chatrooms').doc(chatroomId).collection('messages').doc(messageId);
-    await messageRef.set({
-      'fileUrl': downloadURL,
-      'fileType': fileType,
-      'sender': widget.userModel.uid,
-      'createdon': DateTime.now(),
-      'text': '',
-      'cipherText': '',
-      'seen': false,
-    }, SetOptions(merge: true));
-
-    print('File uploaded and metadata saved successfully!');
-  } catch (e) {
-    print('Error uploading file: $e');
+      print('File uploaded and metadata saved successfully!');
+    } catch (e) {
+      print('Error uploading file: $e');
+    }
   }
-}
 
-
-
-// Future<void> _pickImageOrVideo() async {
-//   final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery); // For images
-//   // To enable video selection, you can add an option for the user to pick a video
-//   // final XFile? pickedFile = await _picker.pickVideo(source: ImageSource.gallery);
-
-//   if (pickedFile != null) {
-//     File file = File(pickedFile.path);
-//     String messageId = uuid.v1();
-//     String fileType = pickedFile.path.endsWith('.mp4') ? 'video' : 'image';
-//     await uploadFile(file, widget.chatroom.chatroomid!, messageId, fileType);
-//   }
-// }
-
-
-
-
-
-
-
-  // Future<void> sendMessage() async {
-  //   String msg = messageController.text.trim();
-  //   messageController.clear();
-
-  //   if (msg != "") {
-  //     final keys = await lwe.getKeys();
-
-  //     final pk = keys['pk'];
-  //     final pk_t = keys['pk_t'];
-  //     final A = keys['A'];
-
-  //     final storedBits = lwe.stringToBits(msg);
-  //     final encrypted = lwe.encryption(storedBits!, pk!, pk_t!, A!);
-
-  //     String encryptedText = jsonEncode(encrypted['encryptedText']);
-  //     log.i("Encrypted Text: $encryptedText");
-
-  //     MessageModel newMessage = MessageModel(
-  //       messageid: uuid.v1(),
-  //       sender: widget.userModel.uid,
-  //       createdon: DateTime.now(),
-  //       text: msg,
-  //       cipherText: encryptedText,
-  //       fileUrl: null,
-  //       fileType: null,
-  //       seen: false,
-  //     );
-
-  //     await FirebaseFirestore.instance
-  //         .collection("chatrooms")
-  //         .doc(widget.chatroom.chatroomid)
-  //         .collection("messages")
-  //         .doc(newMessage.messageid)
-  //         .set(newMessage.toMap());
-
-  //     widget.chatroom.lastMessage = msg;
-  //     await FirebaseFirestore.instance
-  //         .collection("chatrooms")
-  //         .doc(widget.chatroom.chatroomid)
-  //         .set(widget.chatroom.toMap());
-
-  //     log.i("Message Sent!");
-  //   }
-  // }
-
-
-
-
-
-Future<void> sendMessage() async {
+  Future<void> sendMessage() async {
     String msg = messageController.text.trim();
     messageController.clear();
 
     if (pickedFile != null) {
       File file = File(pickedFile!.path);
       String messageId = uuid.v1();
-      String fileType = pickedFile!.path.endsWith('.mp4') ? 'video' : 'image';
+      String fileType =
+          pickedFile!.path.endsWith('.mp4') ? 'video' : 'image';
       await uploadFile(file, widget.chatroom.chatroomid!, messageId, fileType);
       setState(() {
         pickedFile = null;
@@ -234,11 +190,6 @@ Future<void> sendMessage() async {
     }
   }
 
-
-
-
-
-
   Future<String> decryptMessage(String cipherText) async {
     try {
       final keys = await lwe.getKeys();
@@ -251,8 +202,7 @@ Future<void> sendMessage() async {
       }
 
       final List<List<int>> encryptedText = List<List<int>>.from(
-          jsonDecode(cipherText).map((x) => List<int>.from(x))
-      );
+          jsonDecode(cipherText).map((x) => List<int>.from(x)));
       log.i("Encrypted Text Retrieved: $encryptedText");
 
       final String decryptedString = lwe.decryption(encryptedText, sk, sk_t);
@@ -267,124 +217,158 @@ Future<void> sendMessage() async {
 
 
 
-
-
-
-
-
-Widget _buildMessage(MessageModel message) {
-  if (message.fileUrl != null) {
-    if (message.fileType == 'image') {
-      return Align(
-        alignment: message.sender == widget.userModel.uid
-            ? Alignment.centerRight
-            : Alignment.centerLeft,
-        child: GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (BuildContext context) => FullScreenImage(message.fileUrl!),
-              ),
-            );
-          },
-          child: Container(
-            margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-            width: 140, // Square dimensions
-            height: 140, // Square dimensions
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey, width: 3),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Hero(
-              tag: message.fileUrl!,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  message.fileUrl!,
-                  fit: BoxFit.cover,
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    } else if (message.fileType == 'video') {
-      return Align(
-        alignment: message.sender == widget.userModel.uid
-            ? Alignment.centerRight
-            : Alignment.centerLeft,
-        child: GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (BuildContext context) => FullScreenVideo(message.fileUrl!),
-              ),
-            );
-          },
-          child: Container(
-            margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-            width: 140, // Square dimensions
-            height: 140, // Square dimensions
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey, width: 3),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: VideoThumbnailWidget(message.fileUrl!),
-            ),
-          ),
-        ),
-      );
-    }
+Future<void> _launchURL(String url) async {
+  Uri uri = Uri.parse(url);
+  if (await canLaunchUrl(uri)) {
+    await launchUrl(uri);
   } else {
-    return FutureBuilder<String>(
-      future: decryptMessage(message.cipherText!),
-      builder: (BuildContext context, AsyncSnapshot<String> decryptedSnapshot) {
-        if (decryptedSnapshot.connectionState == ConnectionState.waiting) {
-          return CircularProgressIndicator();
-        } else if (decryptedSnapshot.hasError) {
-          return Text("Error decrypting message");
-        } else if (decryptedSnapshot.hasData) {
-          String decryptedMessage = decryptedSnapshot.data!;
-          return Row(
-            mainAxisAlignment: (message.sender == widget.userModel.uid)
-                ? MainAxisAlignment.end
-                : MainAxisAlignment.start,
-            children: [
-              Container(
-                margin: EdgeInsets.symmetric(vertical: 2),
-                padding: EdgeInsets.symmetric(vertical: 10, horizontal: 10),
-                decoration: BoxDecoration(
-                  color: (message.sender == widget.userModel.uid)
-                      ? Colors.grey
-                      : Theme.of(context).colorScheme.secondary,
-                  borderRadius: BorderRadius.circular(5),
-                ),
-                child: Text(
-                  decryptedMessage,
-                  style: TextStyle(
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ],
-          );
-        } else {
-          return Container();
-        }
-      },
-    );
+    log.e('Could not launch $url');
   }
-  return Container();
 }
 
 
 
 
- 
+
+  Widget _buildMessage(MessageModel message) {
+    if (message.fileUrl != null) {
+      if (message.fileType == 'image') {
+        return Align(
+          alignment: message.sender == widget.userModel.uid
+              ? Alignment.centerRight
+              : Alignment.centerLeft,
+          child: GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (BuildContext context) =>
+                      FullScreenImage(message.fileUrl!),
+                ),
+              );
+            },
+            child: Container(
+              margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+              width: 140, // Square dimensions
+              height: 140, // Square dimensions
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey, width: 3),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Hero(
+                tag: message.fileUrl!,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    message.fileUrl!,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      } else if (message.fileType == 'video') {
+        return Align(
+          alignment: message.sender == widget.userModel.uid
+              ? Alignment.centerRight
+              : Alignment.centerLeft,
+          child: GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (BuildContext context) =>
+                      FullScreenVideo(message.fileUrl!),
+                ),
+              );
+            },
+            child: Container(
+              margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+              width: 140, // Square dimensions
+              height: 140, // Square dimensions
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey, width: 3),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: VideoThumbnailWidget(message.fileUrl!),
+              ),
+            ),
+          ),
+        );
+      } else if (message.fileType == 'pdf') {
+        return Align(
+          alignment: message.sender == widget.userModel.uid
+              ? Alignment.centerRight
+              : Alignment.centerLeft,
+          child: GestureDetector(
+  onTap: () async {
+    try {
+      await _launchURL(message.fileUrl!);
+    } catch (e) {
+      log.e('Could not launch ${message.fileUrl!}');
+    }
+  },
+  child: Container(
+    margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+    width: 140,
+    padding: EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      border: Border.all(color: Colors.grey, width: 3),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.picture_as_pdf, size: 50, color: Colors.red),
+        Text(
+          'Open PDF',
+          style: TextStyle(fontSize: 14),
+        ),
+      ],
+    ),
+  ),
+),
+
+        );
+      }
+    } else if (message.cipherText != null && message.cipherText!.isNotEmpty) {
+      return FutureBuilder<String>(
+        future: decryptMessage(message.cipherText!),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator());
+          } else if (snapshot.hasError) {
+            return Text("Error: ${snapshot.error}");
+          } else {
+            return Align(
+              alignment: message.sender == widget.userModel.uid
+                  ? Alignment.centerRight
+                  : Alignment.centerLeft,
+              child: Container(
+                margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                padding: EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                decoration: BoxDecoration(
+                  color: message.sender == widget.userModel.uid
+                      ? Colors.grey[300]
+                      : Theme.of(context).colorScheme.secondary,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  snapshot.data ?? '',
+                  style: TextStyle(fontSize: 16, color: Colors.black),
+                ),
+              ),
+            );
+          }
+        },
+      );
+    }
+    return Container(); // Default empty container
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -393,18 +377,12 @@ Widget _buildMessage(MessageModel message) {
           children: [
             CircleAvatar(
               backgroundColor: Colors.grey[300],
-              backgroundImage: NetworkImage(widget.targetUser.profilepic.toString()),
+              backgroundImage: NetworkImage(widget.targetUser.profilepic!),
             ),
             SizedBox(width: 10),
-            Text(widget.targetUser.fullname.toString()),
+            Text(widget.targetUser.fullname!),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.photo_camera),
-            onPressed: _pickImageOrVideo,
-          ),
-        ],
       ),
       body: SafeArea(
         child: Column(
@@ -422,23 +400,28 @@ Widget _buildMessage(MessageModel message) {
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.active) {
                       if (snapshot.hasData) {
-                        QuerySnapshot dataSnapshot = snapshot.data as QuerySnapshot;
+                        QuerySnapshot dataSnapshot =
+                            snapshot.data as QuerySnapshot;
 
                         return ListView.builder(
                           reverse: true,
                           itemCount: dataSnapshot.docs.length,
                           itemBuilder: (context, index) {
-                            MessageModel currentMessage = MessageModel.fromMap(dataSnapshot.docs[index].data() as Map<String, dynamic>);
+                            MessageModel currentMessage = MessageModel.fromMap(
+                                dataSnapshot.docs[index].data()
+                                    as Map<String, dynamic>);
+
                             return _buildMessage(currentMessage);
                           },
                         );
                       } else if (snapshot.hasError) {
                         return Center(
-                          child: Text("An error occurred! Please check your internet connection."),
+                          child: Text(
+                              "An error occurred! Please check your internet connection."),
                         );
                       } else {
                         return Center(
-                          child: Text("Say hi to your new friend"),
+                          child: Text("Say Hi to your new friend"),
                         );
                       }
                     } else {
@@ -450,52 +433,28 @@ Widget _buildMessage(MessageModel message) {
                 ),
               ),
             ),
-            if (pickedFile != null)
-              Container(
-                color: Colors.grey[300],
-                padding: EdgeInsets.all(10),
-                child: Row(
-                  children: [
-                    if (pickedFile!.path.endsWith('.mp4'))
-                      VideoPlayerWidget(pickedFile!.path),
-                    if (!pickedFile!.path.endsWith('.mp4'))
-                      Image.file(
-                        File(pickedFile!.path),
-                        width: 100,
-                        height: 100,
-                      ),
-                    IconButton(
-                      icon: Icon(Icons.cancel),
-                      onPressed: () {
-                        setState(() {
-                          pickedFile = null;
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
             Container(
               color: Colors.grey[200],
-              padding: EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+              padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               child: Row(
                 children: [
+                  IconButton(
+                    onPressed: _pickImageOrVideoOrPDF,
+                    icon: Icon(Icons.attach_file),
+                  ),
                   Flexible(
                     child: TextField(
                       controller: messageController,
                       maxLines: null,
                       decoration: InputDecoration(
-                        border: InputBorder.none,
                         hintText: "Enter message",
+                        border: InputBorder.none,
                       ),
                     ),
                   ),
                   IconButton(
                     onPressed: sendMessage,
-                    icon: Icon(
-                      Icons.send,
-                      color: Theme.of(context).colorScheme.secondary,
-                    ),
+                    icon: Icon(Icons.send, color: Colors.blue),
                   ),
                 ],
               ),
@@ -505,140 +464,56 @@ Widget _buildMessage(MessageModel message) {
       ),
     );
   }
-
 }
-
-
 
 class VideoThumbnailWidget extends StatefulWidget {
   final String videoUrl;
 
-  const VideoThumbnailWidget(this.videoUrl, {Key? key}) : super(key: key);
+  VideoThumbnailWidget(this.videoUrl);
 
   @override
   _VideoThumbnailWidgetState createState() => _VideoThumbnailWidgetState();
 }
 
 class _VideoThumbnailWidgetState extends State<VideoThumbnailWidget> {
-  late Future<String?> _thumbnail;
+  String? thumbnailPath;
 
   @override
   void initState() {
     super.initState();
-    _thumbnail = _generateThumbnail(widget.videoUrl);
+    _generateThumbnail();
   }
 
-  Future<String?> _generateThumbnail(String videoUrl) async {
-    final directory = await getTemporaryDirectory();
-    final thumbnailPath = await VideoThumbnail.thumbnailFile(
-      video: videoUrl,
-      thumbnailPath: directory.path,
-      imageFormat: ImageFormat.PNG,
-      maxHeight: 120, // Adjust the height as needed
-      quality: 75,
-    );
-    return thumbnailPath;
-  }
+  Future<void> _generateThumbnail() async {
+    try {
+      final Directory tempDir = await getTemporaryDirectory();
+      final String thumbnailPath = await VideoThumbnail.thumbnailFile(
+        video: widget.videoUrl,
+        thumbnailPath: tempDir.path,
+        imageFormat: ImageFormat.PNG,
+        maxWidth: 128,
+        quality: 75,
+      ) as String;
 
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<String?>(
-      future: _thumbnail,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return CircularProgressIndicator();
-        } else if (snapshot.hasError || !snapshot.hasData) {
-          return Center(child: Icon(Icons.error));
-        } else {
-          return Stack(
-            alignment: Alignment.center,
-            children: [
-              Image.file(
-                File(snapshot.data!),
-                fit: BoxFit.cover,
-                width: 140, // Square dimensions
-                height: 140, // Square dimensions
-              ),
-              Icon(
-                Icons.play_circle_fill,
-                color: Colors.white,
-                size: 40, // Adjust the size of the play button as needed
-              ),
-            ],
-          );
-        }
-      },
-    );
-  }
-}
-
-
-
-class VideoPlayerWidget extends StatefulWidget {
-  final String videoUrl;
-
-  const VideoPlayerWidget(this.videoUrl, {Key? key}) : super(key: key);
-
-  @override
-  _VideoPlayerWidgetState createState() => _VideoPlayerWidgetState();
-}
-
-class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
-  late VideoPlayerController _controller;
-  bool _isPlaying = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = VideoPlayerController.network(widget.videoUrl)
-      ..initialize().then((_) {
-        setState(() {});
+      setState(() {
+        this.thumbnailPath = thumbnailPath;
       });
+    } catch (e) {
+      print("Error generating thumbnail: $e");
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        if (_controller.value.isPlaying) {
-          _controller.pause();
-        } else {
-          _controller.play();
-        }
-        setState(() {
-          _isPlaying = !_isPlaying;
-        });
-      },
-      child: _controller.value.isInitialized
-          ? AspectRatio(
-              aspectRatio: _controller.value.aspectRatio,
-              child: VideoPlayer(_controller),
-            )
-          : Center(child: CircularProgressIndicator()),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-}
-
-class FullScreenVideo extends StatelessWidget {
-  final String videoUrl;
-
-  const FullScreenVideo(this.videoUrl, {Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Video'),
-      ),
-      body: Center(
-        child: VideoPlayerWidget(videoUrl),
-      ),
-    );
+    if (thumbnailPath != null) {
+      return Image.file(
+        File(thumbnailPath!),
+        fit: BoxFit.cover,
+      );
+    } else {
+      return Center(
+        child: CircularProgressIndicator(),
+      );
+    }
   }
 }
