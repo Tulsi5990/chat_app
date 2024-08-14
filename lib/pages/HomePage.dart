@@ -9,6 +9,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 class HomePage extends StatefulWidget {
   final UserModel userModel;
@@ -21,6 +22,30 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  Widget _buildLastMessageSubtitle(ChatRoomModel chatRoomModel) {
+    final lastMessageContent = chatRoomModel.lastMessageContent ?? "";
+
+
+   
+    switch (chatRoomModel.lastMessageType) {
+      case "image":
+        return Text("Sent a photo");
+      case "video":
+        return Text("Sent a video");
+      case "pdf":
+       // Use path package to get the filename
+      return Text("Sent a file");
+        
+      case "text":
+      default:
+        return lastMessageContent.isNotEmpty
+            ? Text(lastMessageContent)
+            : Text("Say hi to your new friend!", style: TextStyle(
+                color: Theme.of(context).colorScheme.secondary,
+              ));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -89,9 +114,7 @@ class _HomePageState extends State<HomePage> {
                                   backgroundImage: NetworkImage(targetUser.profilepic.toString()),
                                 ),
                                 title: Text(targetUser.fullname.toString()),
-                                subtitle: (chatRoomModel.lastMessage.toString() != "") ? Text(chatRoomModel.lastMessage.toString()) : Text("Say hi to your new friend!", style: TextStyle(
-                                  color: Theme.of(context).colorScheme.secondary,
-                                ),),
+                                subtitle: _buildLastMessageSubtitle(chatRoomModel),
                               );
                             }
                             else {

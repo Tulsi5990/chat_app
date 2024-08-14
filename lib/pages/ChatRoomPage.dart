@@ -130,6 +130,14 @@ Future<void> _pickImageOrVideoOrPDF() async {
         'seen': false,
       }, SetOptions(merge: true));
 
+      widget.chatroom.lastMessage = fileName; // Set the filename as last message
+    widget.chatroom.lastMessageType = fileType; // Set file type
+    widget.chatroom.lastMessageContent = downloadURL; // Set file URL
+    await FirebaseFirestore.instance
+        .collection("chatrooms")
+        .doc(widget.chatroom.chatroomid)
+        .set(widget.chatroom.toMap());
+
       print('File uploaded and metadata saved successfully!');
     } catch (e) {
       print('Error uploading file: $e');
@@ -144,7 +152,8 @@ Future<void> _pickImageOrVideoOrPDF() async {
       File file = File(pickedFile!.path);
       String messageId = uuid.v1();
       String fileType =
-          pickedFile!.path.endsWith('.mp4') ? 'video' : 'image';
+          pickedFile!.path.endsWith('.mp4') ? 'video' : pickedFile!.path.endsWith('.pdf')
+            ? 'pdf' : 'image';
       await uploadFile(file, widget.chatroom.chatroomid!, messageId, fileType);
       setState(() {
         pickedFile = null;
@@ -185,6 +194,8 @@ Future<void> _pickImageOrVideoOrPDF() async {
           
 
       widget.chatroom.lastMessage = msg;
+       widget.chatroom.lastMessageType = 'text'; // Set message type
+    widget.chatroom.lastMessageContent = msg; 
       await FirebaseFirestore.instance
           .collection("chatrooms")
           .doc(widget.chatroom.chatroomid)

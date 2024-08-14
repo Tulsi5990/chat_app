@@ -40,6 +40,7 @@ class MessageModel {
   final String? fileType;
   final bool? seen;
   final String? fileName;
+  final DateTime timestamp;
 
   MessageModel({
     this.messageid,
@@ -51,6 +52,7 @@ class MessageModel {
     this.fileUrl,
     this.fileName,
     this.fileType,
+    // this.timestamp,
   });
 
   factory MessageModel.fromMap(Map<String, dynamic> data) {
@@ -64,6 +66,7 @@ class MessageModel {
       fileUrl: data['fileUrl'],
       fileType: data['fileType'],
       fileName:data['fileName'],
+      // timestamp:data['timestamp'],
     );
   }
 
@@ -78,6 +81,7 @@ class MessageModel {
       'fileUrl': fileUrl,
       'fileType': fileType,
       'fileName':fileName,
+      // 'timestamp':timestamp,
     };
   }
 }
