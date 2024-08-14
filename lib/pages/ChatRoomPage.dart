@@ -111,6 +111,7 @@ Future<void> _pickImageOrVideoOrPDF() async {
       await fileRef.putFile(file);
 
       final downloadURL = await fileRef.getDownloadURL();
+       final fileName = p.basename(file.path); // Get the filename
 
       final messageRef = FirebaseFirestore.instance
           .collection('chatrooms')
@@ -125,6 +126,7 @@ Future<void> _pickImageOrVideoOrPDF() async {
         'createdon': DateTime.now(),
         'text': '',
         'cipherText': '',
+        'fileName': fileName, 
         'seen': false,
       }, SetOptions(merge: true));
 
@@ -344,7 +346,7 @@ Future<void> _deleteMessage(String messageId) async {
           ),
         );
       } else if (message.fileType == 'pdf') {
-       String fileName = message.fileUrl != null ? p.basename(message.fileUrl!) : 'Unknown.pdf';
+        String fileName = message.fileName ?? 'Unknown.pdf'; 
         return Align(
           alignment: message.sender == widget.userModel.uid
               ? Alignment.centerRight
