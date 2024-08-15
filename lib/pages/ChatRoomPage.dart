@@ -263,8 +263,12 @@ void markMessagesAsSeen() async {
         doc.reference.update({'seen': true});
       }
     });
+
+    // Reset unread message count after marking messages as seen
+    _resetUnreadMessageCount();
   }
 }
+
 
 void _updateUnreadMessageCount() async {
   // Only increment for the receiver
@@ -280,7 +284,7 @@ void _updateUnreadMessageCount() async {
 
 // Reset the unread message count when the receiver opens the chat room
 void _resetUnreadMessageCount() async {
-  if (widget.userModel.uid == widget.targetUser.uid) {
+  if (widget.chatroom.chatroomid != null) {
     await FirebaseFirestore.instance
         .collection("chatrooms")
         .doc(widget.chatroom.chatroomid)
@@ -289,6 +293,7 @@ void _resetUnreadMessageCount() async {
     });
   }
 }
+
 
 @override
 void initState() {
