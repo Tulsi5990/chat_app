@@ -5,7 +5,8 @@ class ChatRoomModel {
   String? chatroomid;
   Map<String, dynamic>? participants;
   String? lastMessage;
-  String? lastMessageType; // Add this field
+  String? lastMessageType;
+   String? lastMessageId; // Add this field
   String? lastMessageContent;
   Timestamp? lastMessageTimestamp;
   Map<String, int>? unreadMessageCount; // Add this field
@@ -15,6 +16,7 @@ class ChatRoomModel {
     this.participants,
     this.lastMessage,
     this.lastMessageType,
+     this.lastMessageId,
     this.lastMessageContent,
     this.lastMessageTimestamp,
     this.unreadMessageCount, 
@@ -25,6 +27,7 @@ class ChatRoomModel {
     chatroomid = map["chatroomid"];
     participants = map["participants"];
     lastMessage = map["lastmessage"];
+    lastMessageId = map["lastMessageId"];
     lastMessageType = map["lastMessageType"];
     lastMessageContent = map["lastMessageContent"];
     lastMessageTimestamp = map["lastMessageTimestamp"];
@@ -45,7 +48,8 @@ class ChatRoomModel {
       "chatroomid": chatroomid,
       "participants": participants,
       "lastmessage": lastMessage,
-      "lastMessageType": lastMessageType, // Add the type
+      "lastMessageType": lastMessageType,
+       "lastMessageId": lastMessageId, // Add the type
       "lastMessageContent": lastMessageContent, // Add the content
       "lastMessageTimestamp": lastMessageTimestamp,
       'unreadMessageCount': unreadMessageCount,

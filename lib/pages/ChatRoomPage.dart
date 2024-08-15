@@ -171,74 +171,76 @@ void _incrementUnreadMessageCount(String chatroomId, String receiverId) async {
 
 
 
-  Future<void> sendMessage() async {
-    String msg = messageController.text.trim();
-    messageController.clear();
+ Future<void> sendMessage() async {
+  String msg = messageController.text.trim();
+  messageController.clear();
 
-    if (pickedFile != null) {
-      File file = File(pickedFile!.path);
-      String messageId = uuid.v1();
-      String fileType = pickedFile!.path.endsWith('.mp4')
-          ? 'video'
-          : pickedFile!.path.endsWith('.pdf')
-              ? 'pdf'
-              : 'image';
-      await uploadFile(file, widget.chatroom.chatroomid!, messageId, fileType);
-      setState(() {
-        pickedFile = null;
-      });
-      return;
-    }
-
-    if (msg != "") {
-      final keys = await lwe.getKeys();
-
-      final pk = keys['pk'];
-      final pk_t = keys['pk_t'];
-      final A = keys['A'];
-
-      final storedBits = lwe.stringToBits(msg);
-      final encrypted = lwe.encryption(storedBits!, pk!, pk_t!, A!);
-
-      String encryptedText = jsonEncode(encrypted['encryptedText']);
-      log.i("Encrypted Text: $encryptedText");
-
-      MessageModel newMessage = MessageModel(
-        messageid: uuid.v1(),
-        sender: widget.userModel.uid,
-        createdon: Timestamp.now().toDate(), // Convert Timestamp to DateTime
-        text: msg,
-        cipherText: encryptedText,
-        fileUrl: null,
-        fileType: null,
-        seen: false,
-      );
-
-      await FirebaseFirestore.instance
-          .collection("chatrooms")
-          .doc(widget.chatroom.chatroomid)
-          .collection("messages")
-          .doc(newMessage.messageid)
-          .set(newMessage.toMap());
-
-      widget.chatroom.lastMessage = msg;
-      widget.chatroom.lastMessageType = 'text'; // Set message type
-      widget.chatroom.lastMessageContent = msg;
-      widget.chatroom.lastMessageTimestamp = Timestamp.now(); // Set timestamp
-
-     if (widget.chatroom.chatroomid != null) {
-  String receiverId = widget.chatroom.participants!.keys.firstWhere((key) => key != widget.userModel.uid);
-
-_incrementUnreadMessageCount(widget.chatroom.chatroomid!, receiverId);} // Use the non-null assertion operator
-
-      await FirebaseFirestore.instance
-          .collection("chatrooms")
-          .doc(widget.chatroom.chatroomid)
-          .set(widget.chatroom.toMap());
-
-      log.i("Message Sent!");
-    }
+  if (pickedFile != null) {
+    File file = File(pickedFile!.path);
+    String messageId = uuid.v1();
+    String fileType = pickedFile!.path.endsWith('.mp4')
+        ? 'video'
+        : pickedFile!.path.endsWith('.pdf')
+            ? 'pdf'
+            : 'image';
+    await uploadFile(file, widget.chatroom.chatroomid!, messageId, fileType);
+    setState(() {
+      pickedFile = null;
+    });
+    return;
   }
+
+  if (msg != "") {
+    final keys = await lwe.getKeys();
+
+    final pk = keys['pk'];
+    final pk_t = keys['pk_t'];
+    final A = keys['A'];
+
+    final storedBits = lwe.stringToBits(msg);
+    final encrypted = lwe.encryption(storedBits!, pk!, pk_t!, A!);
+
+    String encryptedText = jsonEncode(encrypted['encryptedText']);
+    log.i("Encrypted Text: $encryptedText");
+
+    MessageModel newMessage = MessageModel(
+      messageid: uuid.v1(),
+      sender: widget.userModel.uid,
+      createdon: Timestamp.now().toDate(), // Convert Timestamp to DateTime
+      text: msg,
+      cipherText: encryptedText,
+      fileUrl: null,
+      fileType: null,
+      seen: false,
+    );
+
+    await FirebaseFirestore.instance
+        .collection("chatrooms")
+        .doc(widget.chatroom.chatroomid)
+        .collection("messages")
+        .doc(newMessage.messageid)
+        .set(newMessage.toMap());
+
+    widget.chatroom.lastMessage = msg;
+    widget.chatroom.lastMessageType = 'text'; // Set message type
+    widget.chatroom.lastMessageContent = msg;
+    widget.chatroom.lastMessageTimestamp = Timestamp.now(); // Set timestamp
+    widget.chatroom.lastMessageId = newMessage.messageid; // Set last message ID
+
+    if (widget.chatroom.chatroomid != null) {
+      String receiverId = widget.chatroom.participants!.keys.firstWhere((key) => key != widget.userModel.uid);
+      _incrementUnreadMessageCount(widget.chatroom.chatroomid!, receiverId);
+    }
+
+    await FirebaseFirestore.instance
+        .collection("chatrooms")
+        .doc(widget.chatroom.chatroomid)
+        .set(widget.chatroom.toMap(), SetOptions(merge: true)); // Merge updates
+
+    log.i("Message Sent!");
+  }
+}
+
 
 
 
@@ -334,19 +336,29 @@ void initState() {
   }
 
 
+
 String formatTimestamp(Timestamp timestamp) {
   DateTime now = DateTime.now();
   DateTime date = timestamp.toDate();
-  Duration diff = now.difference(date);
-
+  
+  // Reset time to midnight for accurate day difference comparison
+  DateTime nowMidnight = DateTime(now.year, now.month, now.day);
+  DateTime dateMidnight = DateTime(date.year, date.month, date.day);
+  
+  Duration diff = nowMidnight.difference(dateMidnight);
+  
   if (diff.inDays == 0) {
-    return DateFormat('h:mm a').format(date); // Today
+    // Today
+    return DateFormat('h:mm a').format(date);
   } else if (diff.inDays == 1) {
-    return 'Yesterday, ${DateFormat('h:mm a').format(date)}'; // Yesterday with time
+    // Yesterday
+    return 'Yesterday, ${DateFormat('h:mm a').format(date)}';
   } else if (diff.inDays < 7) {
-    return '${DateFormat('EEEE').format(date)}, ${DateFormat('h:mm a').format(date)}'; // Day of the week with time
+    // Day of the week with time (e.g., Monday, 4:00 PM)
+    return '${DateFormat('EEEE').format(date)}, ${DateFormat('h:mm a').format(date)}';
   } else {
-    return '${DateFormat('MMM d, yyyy').format(date)}, ${DateFormat('h:mm a').format(date)}'; // Date with time
+    // Date with time (e.g., Jul 24, 2024, 4:00 PM)
+    return '${DateFormat('MMM d, yyyy').format(date)}, ${DateFormat('h:mm a').format(date)}';
   }
 }
 
@@ -392,6 +404,35 @@ Future<void> _showDeleteDialog(String messageId) async {
 }
 
 Future<void> _deleteMessage(String messageId) async {
+  // Get the chat room document
+  DocumentReference chatRoomRef = FirebaseFirestore.instance
+      .collection("chatrooms")
+      .doc(widget.chatroom.chatroomid);
+
+  // Get the current chat room data
+  DocumentSnapshot chatRoomDoc = await chatRoomRef.get();
+  if (!chatRoomDoc.exists) return;
+
+  ChatRoomModel chatRoomModel = ChatRoomModel.fromMap(chatRoomDoc.data() as Map<String, dynamic>);
+
+  // Check if the deleted message was the last message
+  if (chatRoomModel.lastMessageId == messageId) {
+    // Update the chat room with "last message was deleted"
+    await chatRoomRef.update({
+      'lastMessage': 'The last message was deleted',
+      'lastMessageType': 'deleted',
+      'lastMessageContent': null,
+      'lastMessageId': null,
+      'lastMessageTimestamp': Timestamp.now(), // Update timestamp
+    });
+  } else {
+    // If it's not the last message, no need to update the last message
+    await chatRoomRef.update({
+      'lastMessageId': chatRoomModel.lastMessageId, // Ensure this field is updated correctly
+    });
+  }
+
+  // Delete the message
   await FirebaseFirestore.instance
       .collection("chatrooms")
       .doc(widget.chatroom.chatroomid)
@@ -401,6 +442,9 @@ Future<void> _deleteMessage(String messageId) async {
 
   log.i("Message Deleted!");
 }
+
+
+
 
 
 

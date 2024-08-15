@@ -50,6 +50,9 @@ Widget _buildLastMessageSubtitle(ChatRoomModel chatRoomModel) {
     case "pdf":
       lastMessageDisplay = "Sent a file";
       break;
+    case "deleted":
+      lastMessageDisplay = "The last message was deleted";
+      break;
     case "text":
     default:
       lastMessageDisplay = lastMessageContent;
@@ -77,6 +80,8 @@ Widget _buildLastMessageSubtitle(ChatRoomModel chatRoomModel) {
     ],
   );
 }
+
+
 
 
 
