@@ -10,6 +10,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
+import 'package:intl/intl.dart';
 
 class HomePage extends StatefulWidget {
   final UserModel userModel;
@@ -22,29 +23,62 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  Widget _buildLastMessageSubtitle(ChatRoomModel chatRoomModel) {
-    final lastMessageContent = chatRoomModel.lastMessageContent ?? "";
+Widget _buildLastMessageSubtitle(ChatRoomModel chatRoomModel) {
+  final lastMessageContent = chatRoomModel.lastMessageContent ?? "";
+  final lastMessageTimestamp = chatRoomModel.lastMessageTimestamp?.toDate();
 
-
-   
-    switch (chatRoomModel.lastMessageType) {
-      case "image":
-        return Text("Sent a photo");
-      case "video":
-        return Text("Sent a video");
-      case "pdf":
-       // Use path package to get the filename
-      return Text("Sent a file");
-        
-      case "text":
-      default:
-        return lastMessageContent.isNotEmpty
-            ? Text(lastMessageContent)
-            : Text("Say hi to your new friend!", style: TextStyle(
-                color: Theme.of(context).colorScheme.secondary,
-              ));
+  String formattedTime = "";
+  if (lastMessageTimestamp != null) {
+    DateTime now = DateTime.now();
+    if (now.difference(lastMessageTimestamp!).inDays == 0) {
+      formattedTime = "Today, ${TimeOfDay.fromDateTime(lastMessageTimestamp).format(context)}";
+    } else if (now.difference(lastMessageTimestamp).inDays == 1) {
+      formattedTime = "Yesterday, ${TimeOfDay.fromDateTime(lastMessageTimestamp).format(context)}";
+    } else {
+      formattedTime = "${lastMessageTimestamp.day}/${lastMessageTimestamp.month}/${lastMessageTimestamp.year}, ${TimeOfDay.fromDateTime(lastMessageTimestamp).format(context)}";
     }
   }
+
+  String lastMessageDisplay = "";
+  switch (chatRoomModel.lastMessageType) {
+    case "image":
+      lastMessageDisplay = "Sent a photo";
+      break;
+    case "video":
+      lastMessageDisplay = "Sent a video";
+      break;
+    case "pdf":
+      lastMessageDisplay = "Sent a file";
+      break;
+    case "text":
+    default:
+      lastMessageDisplay = lastMessageContent;
+      break;
+  }
+
+  final unreadCount = chatRoomModel.unreadMessageCount?[widget.userModel.uid] ?? 0;
+
+  return Row(
+    children: [
+      Expanded(child: Text("$lastMessageDisplay • $formattedTime")),
+      if (unreadCount > 0)
+        Container(
+          margin: EdgeInsets.only(left: 5),
+          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.red,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            unreadCount.toString(),
+            style: TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        ),
+    ],
+  );
+}
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -98,6 +132,7 @@ class _HomePageState extends State<HomePage> {
 
                               return ListTile(
                                 onTap: () {
+                                 
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(builder: (context) {
@@ -106,6 +141,7 @@ class _HomePageState extends State<HomePage> {
                                         firebaseUser: widget.firebaseUser,
                                         userModel: widget.userModel,
                                         targetUser: targetUser,
+                                        
                                       );
                                     }),
                                   );

@@ -1,9 +1,14 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+
 class ChatRoomModel {
   String? chatroomid;
   Map<String, dynamic>? participants;
   String? lastMessage;
   String? lastMessageType; // Add this field
-  String? lastMessageContent; // Add this field
+  String? lastMessageContent;
+  Timestamp? lastMessageTimestamp;
+  Map<String, int>? unreadMessageCount; // Add this field
 
   ChatRoomModel({
     this.chatroomid,
@@ -11,14 +16,28 @@ class ChatRoomModel {
     this.lastMessage,
     this.lastMessageType,
     this.lastMessageContent,
+    this.lastMessageTimestamp,
+    this.unreadMessageCount, 
   });
 
-  ChatRoomModel.fromMap(Map<String, dynamic> map) {
+  // Initialize unreadMessageCount in the initializer list
+   ChatRoomModel.fromMap(Map<String, dynamic> map) {
     chatroomid = map["chatroomid"];
     participants = map["participants"];
     lastMessage = map["lastmessage"];
-    lastMessageType = map["lastMessageType"]; // Parse the type
-    lastMessageContent = map["lastMessageContent"]; // Parse the content
+    lastMessageType = map["lastMessageType"];
+    lastMessageContent = map["lastMessageContent"];
+    lastMessageTimestamp = map["lastMessageTimestamp"];
+
+    // Handling both int and Map<String, int>
+    if (map["unreadMessageCount"] is Map) {
+      unreadMessageCount = Map<String, int>.from(map["unreadMessageCount"]);
+    } else if (map["unreadMessageCount"] is int) {
+      // Assuming the previous implementation was using an integer
+      unreadMessageCount = {participants!.keys.first: map["unreadMessageCount"]};
+    } else {
+      unreadMessageCount = {};
+    }
   }
 
   Map<String, dynamic> toMap() {
@@ -28,6 +47,8 @@ class ChatRoomModel {
       "lastmessage": lastMessage,
       "lastMessageType": lastMessageType, // Add the type
       "lastMessageContent": lastMessageContent, // Add the content
+      "lastMessageTimestamp": lastMessageTimestamp,
+      'unreadMessageCount': unreadMessageCount,
     };
   }
 }

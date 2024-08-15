@@ -38,15 +38,15 @@ class MessageModel {
   final String? cipherText;
   final String? fileUrl;
   final String? fileType;
-  final bool? seen;
+  final bool seen;
   final String? fileName;
-  final DateTime timestamp;
+  // final DateTime timestamp;
 
   MessageModel({
     this.messageid,
     this.sender,
     this.text,
-    this.seen,
+    this.seen=false,
     this.createdon,
     this.cipherText,
     this.fileUrl,
@@ -60,7 +60,7 @@ class MessageModel {
       messageid: data['messageid'],
       sender: data['sender'],
       text: data['text'],
-      seen: data['seen'],
+      seen: data['seen']??false,
       createdon: (data['createdon'] as Timestamp).toDate(), // Correct usage
       cipherText: data['cipherText'],
       fileUrl: data['fileUrl'],

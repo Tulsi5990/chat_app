@@ -20,6 +20,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:chat_app_lattice/fullScreen/full_screen_image.dart';
 import 'package:chat_app_lattice/fullScreen/full_screen_video.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:intl/intl.dart';
 
 class ChatRoomPage extends StatefulWidget {
   final UserModel targetUser;
@@ -47,59 +48,58 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   final Uuid uuid = Uuid();
   XFile? pickedFile;
 
-  
-Future<void> _pickImageOrVideoOrPDF() async {
-  final action = await showDialog<int>( 
-    context: context,
-    builder: (BuildContext context) {
-      return AlertDialog(
-        title: Text('Select Media'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, 1),
-            child: Text('Image'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, 2),
-            child: Text('Video'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, 3),
-            child: Text('PDF'),
-          ),
-        ],
-      );
-    },
-  );
+  Future<void> _pickImageOrVideoOrPDF() async {
+    final action = await showDialog<int>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Select Media'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, 1),
+              child: Text('Image'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, 2),
+              child: Text('Video'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, 3),
+              child: Text('PDF'),
+            ),
+          ],
+        );
+      },
+    );
 
-  if (action != null) {
-    if (action == 1) {
-      pickedFile = await _picker.pickImage(source: ImageSource.gallery);
-    } else if (action == 2) {
-      pickedFile = await _picker.pickVideo(source: ImageSource.gallery);
-    } else if (action == 3) {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pdf'],
-      );
+    if (action != null) {
+      if (action == 1) {
+        pickedFile = await _picker.pickImage(source: ImageSource.gallery);
+      } else if (action == 2) {
+        pickedFile = await _picker.pickVideo(source: ImageSource.gallery);
+      } else if (action == 3) {
+        FilePickerResult? result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['pdf'],
+        );
 
-      if (result != null && result.files.single.path != null) {
-        pickedFile = XFile(result.files.single.path!);
+        if (result != null && result.files.single.path != null) {
+          pickedFile = XFile(result.files.single.path!);
+        }
+      }
+
+      if (pickedFile != null) {
+        File file = File(pickedFile!.path);
+        String messageId = uuid.v1();
+        String fileType = pickedFile!.path.endsWith('.mp4')
+            ? 'video'
+            : pickedFile!.path.endsWith('.pdf')
+                ? 'pdf'
+                : 'image';
+        await uploadFile(file, widget.chatroom.chatroomid!, messageId, fileType);
       }
     }
-
-    if (pickedFile != null) {
-      File file = File(pickedFile!.path);
-      String messageId = uuid.v1();
-      String fileType = pickedFile!.path.endsWith('.mp4')
-          ? 'video'
-          : pickedFile!.path.endsWith('.pdf')
-              ? 'pdf'
-              : 'image';
-      await uploadFile(file, widget.chatroom.chatroomid!, messageId, fileType);
-    }
   }
-}
 
   Future<void> uploadFile(
       File file, String chatroomId, String messageId, String fileType) async {
@@ -111,7 +111,7 @@ Future<void> _pickImageOrVideoOrPDF() async {
       await fileRef.putFile(file);
 
       final downloadURL = await fileRef.getDownloadURL();
-       final fileName = p.basename(file.path); // Get the filename
+      final fileName = p.basename(file.path); // Get the filename
 
       final messageRef = FirebaseFirestore.instance
           .collection('chatrooms')
@@ -119,30 +119,57 @@ Future<void> _pickImageOrVideoOrPDF() async {
           .collection('messages')
           .doc(messageId);
       await messageRef.set({
-         'messageid': messageId,
+        'messageid': messageId,
         'fileUrl': downloadURL,
         'fileType': fileType,
         'sender': widget.userModel.uid,
-        'createdon': DateTime.now(),
+        'createdon': Timestamp.now(),
         'text': '',
         'cipherText': '',
-        'fileName': fileName, 
+        'fileName': fileName,
         'seen': false,
       }, SetOptions(merge: true));
 
       widget.chatroom.lastMessage = fileName; // Set the filename as last message
-    widget.chatroom.lastMessageType = fileType; // Set file type
-    widget.chatroom.lastMessageContent = downloadURL; // Set file URL
-    await FirebaseFirestore.instance
-        .collection("chatrooms")
-        .doc(widget.chatroom.chatroomid)
-        .set(widget.chatroom.toMap());
+      widget.chatroom.lastMessageType = fileType; // Set file type
+      widget.chatroom.lastMessageContent = downloadURL; // Set file URL
+      widget.chatroom.lastMessageTimestamp = Timestamp.now(); // Set timestamp
+      await FirebaseFirestore.instance
+          .collection("chatrooms")
+          .doc(widget.chatroom.chatroomid)
+          .set(widget.chatroom.toMap());
 
-      print('File uploaded and metadata saved successfully!');
+      log.i('File uploaded and metadata saved successfully!');
     } catch (e) {
-      print('Error uploading file: $e');
+      log.e('Error uploading file: $e');
     }
   }
+
+
+void _incrementUnreadMessageCount(String chatroomId, String receiverId) async {
+  DocumentReference chatroomRef = FirebaseFirestore.instance.collection("chatrooms").doc(chatroomId);
+
+  await FirebaseFirestore.instance.runTransaction((transaction) async {
+    DocumentSnapshot snapshot = await transaction.get(chatroomRef);
+
+    if (snapshot.exists) {
+      ChatRoomModel chatRoomModel = ChatRoomModel.fromMap(snapshot.data() as Map<String, dynamic>);
+      
+      // Initialize the unreadMessageCount map if it's null
+      chatRoomModel.unreadMessageCount ??= {};
+
+      // Increment the unread message count for the specific receiver
+      chatRoomModel.unreadMessageCount![receiverId] = (chatRoomModel.unreadMessageCount![receiverId] ?? 0) + 1;
+
+      transaction.update(chatroomRef, chatRoomModel.toMap());
+    }
+  });
+}
+
+
+
+
+
 
   Future<void> sendMessage() async {
     String msg = messageController.text.trim();
@@ -151,9 +178,11 @@ Future<void> _pickImageOrVideoOrPDF() async {
     if (pickedFile != null) {
       File file = File(pickedFile!.path);
       String messageId = uuid.v1();
-      String fileType =
-          pickedFile!.path.endsWith('.mp4') ? 'video' : pickedFile!.path.endsWith('.pdf')
-            ? 'pdf' : 'image';
+      String fileType = pickedFile!.path.endsWith('.mp4')
+          ? 'video'
+          : pickedFile!.path.endsWith('.pdf')
+              ? 'pdf'
+              : 'image';
       await uploadFile(file, widget.chatroom.chatroomid!, messageId, fileType);
       setState(() {
         pickedFile = null;
@@ -177,7 +206,7 @@ Future<void> _pickImageOrVideoOrPDF() async {
       MessageModel newMessage = MessageModel(
         messageid: uuid.v1(),
         sender: widget.userModel.uid,
-        createdon: DateTime.now(),
+        createdon: Timestamp.now().toDate(), // Convert Timestamp to DateTime
         text: msg,
         cipherText: encryptedText,
         fileUrl: null,
@@ -191,11 +220,17 @@ Future<void> _pickImageOrVideoOrPDF() async {
           .collection("messages")
           .doc(newMessage.messageid)
           .set(newMessage.toMap());
-          
 
       widget.chatroom.lastMessage = msg;
-       widget.chatroom.lastMessageType = 'text'; // Set message type
-    widget.chatroom.lastMessageContent = msg; 
+      widget.chatroom.lastMessageType = 'text'; // Set message type
+      widget.chatroom.lastMessageContent = msg;
+      widget.chatroom.lastMessageTimestamp = Timestamp.now(); // Set timestamp
+
+     if (widget.chatroom.chatroomid != null) {
+  String receiverId = widget.chatroom.participants!.keys.firstWhere((key) => key != widget.userModel.uid);
+
+_incrementUnreadMessageCount(widget.chatroom.chatroomid!, receiverId);} // Use the non-null assertion operator
+
       await FirebaseFirestore.instance
           .collection("chatrooms")
           .doc(widget.chatroom.chatroomid)
@@ -204,6 +239,69 @@ Future<void> _pickImageOrVideoOrPDF() async {
       log.i("Message Sent!");
     }
   }
+
+
+
+
+
+
+
+
+
+void markMessagesAsSeen() async {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user != null) {
+    await FirebaseFirestore.instance
+        .collection('chatrooms')
+        .doc(widget.chatroom.chatroomid)
+        .collection('messages')
+        .where('receiver', isEqualTo: user.uid)
+        .where('seen', isEqualTo: false)
+        .get()
+        .then((snapshot) {
+      for (var doc in snapshot.docs) {
+        doc.reference.update({'seen': true});
+      }
+    });
+  }
+}
+
+void _updateUnreadMessageCount() async {
+  // Only increment for the receiver
+  if (widget.userModel.uid != widget.targetUser.uid) {
+    await FirebaseFirestore.instance
+        .collection("chatrooms")
+        .doc(widget.chatroom.chatroomid)
+        .update({
+      "unreadMessageCount.${widget.targetUser.uid}": FieldValue.increment(1),
+    });
+  }
+}
+
+// Reset the unread message count when the receiver opens the chat room
+void _resetUnreadMessageCount() async {
+  if (widget.userModel.uid == widget.targetUser.uid) {
+    await FirebaseFirestore.instance
+        .collection("chatrooms")
+        .doc(widget.chatroom.chatroomid)
+        .update({
+      "unreadMessageCount.${widget.userModel.uid}": 0,
+    });
+  }
+}
+
+@override
+void initState() {
+  super.initState();
+  markMessagesAsSeen(); 
+ if (widget.chatroom.chatroomid != null) {
+  _resetUnreadMessageCount(); // Use the non-null assertion operator
+}// Call when the chat page is opened
+}
+
+
+
+
 
   Future<String> decryptMessage(String cipherText) async {
     try {
@@ -229,6 +327,26 @@ Future<void> _pickImageOrVideoOrPDF() async {
       return "Error decrypting message";
     }
   }
+
+
+String formatTimestamp(Timestamp timestamp) {
+  DateTime now = DateTime.now();
+  DateTime date = timestamp.toDate();
+  Duration diff = now.difference(date);
+
+  if (diff.inDays == 0) {
+    return DateFormat('h:mm a').format(date); // Today
+  } else if (diff.inDays == 1) {
+    return 'Yesterday, ${DateFormat('h:mm a').format(date)}'; // Yesterday with time
+  } else if (diff.inDays < 7) {
+    return '${DateFormat('EEEE').format(date)}, ${DateFormat('h:mm a').format(date)}'; // Day of the week with time
+  } else {
+    return '${DateFormat('MMM d, yyyy').format(date)}, ${DateFormat('h:mm a').format(date)}'; // Date with time
+  }
+}
+
+
+
 
 
 
@@ -282,265 +400,319 @@ Future<void> _deleteMessage(String messageId) async {
 
 
 
-  Widget _buildMessage(MessageModel message) {
-    if (message.fileUrl != null) {
-      if (message.fileType == 'image') {
-        return Align(
-          alignment: message.sender == widget.userModel.uid
-              ? Alignment.centerRight
-              : Alignment.centerLeft,
-          child: GestureDetector(
-            onLongPress: () {
-            _showDeleteDialog(message.messageid!);
-          },
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (BuildContext context) =>
-                      FullScreenImage(message.fileUrl!),
-                ),
-              );
-            },
-            child: Container(
-              margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-              width: 140, // Square dimensions
-              height: 140, // Square dimensions
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey, width: 3),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Hero(
-                tag: message.fileUrl!,
-                child: ClipRRect(
+Widget _buildMessage(MessageModel message) {
+  String formattedTime = formatTimestamp(Timestamp.fromDate(message.createdon!));
+
+  if (message.fileUrl != null) {
+    if (message.fileType == 'image') {
+      return Align(
+        alignment: message.sender == widget.userModel.uid
+            ? Alignment.centerRight
+            : Alignment.centerLeft,
+        child: Column(
+          crossAxisAlignment: message.sender == widget.userModel.uid
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          children: [
+            GestureDetector(
+              onLongPress: () {
+                _showDeleteDialog(message.messageid!);
+              },
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (BuildContext context) =>
+                        FullScreenImage(message.fileUrl!),
+                  ),
+                );
+              },
+              child: Container(
+                margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                width: 140,
+                height: 140,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey, width: 3),
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    message.fileUrl!,
-                    fit: BoxFit.cover,
+                ),
+                child: Hero(
+                  tag: message.fileUrl!,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      message.fileUrl!,
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        );
-      } else if (message.fileType == 'video') {
-        return Align(
-          alignment: message.sender == widget.userModel.uid
-              ? Alignment.centerRight
-              : Alignment.centerLeft,
-          child: GestureDetector(
-            onLongPress: () {
-            _showDeleteDialog(message.messageid!);
-          },
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (BuildContext context) =>
-                      FullScreenVideo(message.fileUrl!),
+            Text(
+              formattedTime,
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            if (message.seen)
+              Icon(Icons.visibility, color: Colors.blue, size: 16), // Seen indicator
+          ],
+        ),
+      );
+    } else if (message.fileType == 'video') {
+      return Align(
+        alignment: message.sender == widget.userModel.uid
+            ? Alignment.centerRight
+            : Alignment.centerLeft,
+        child: Column(
+          crossAxisAlignment: message.sender == widget.userModel.uid
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          children: [
+            GestureDetector(
+              onLongPress: () {
+                _showDeleteDialog(message.messageid!);
+              },
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (BuildContext context) =>
+                        FullScreenVideo(message.fileUrl!),
+                  ),
+                );
+              },
+              child: Container(
+                margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                width: 140,
+                height: 140,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey, width: 3),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-              );
-            },
-            child: Container(
-              margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-              width: 140, // Square dimensions
-              height: 140, // Square dimensions
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey, width: 3),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: VideoThumbnailWidget(message.fileUrl!),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: VideoThumbnailWidget(message.fileUrl!),
+                ),
               ),
             ),
-          ),
-        );
-      } else if (message.fileType == 'pdf') {
-        String fileName = message.fileName ?? 'Unknown.pdf'; 
-        return Align(
-          alignment: message.sender == widget.userModel.uid
-              ? Alignment.centerRight
-              : Alignment.centerLeft,
-          child: GestureDetector(
-             onLongPress: () {
-              print("Long press detected on message ID: ${message.messageid}");
-              _showDeleteDialog(message.messageid!);
-            },
-         onTap: () async {
-       try {
-      await _launchURL(message.fileUrl!);
-    } catch (e) {
-      log.e('Could not launch ${message.fileUrl!}');
+            Text(
+              formattedTime,
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            if (message.seen)
+              Icon(Icons.visibility, color: Colors.blue, size: 16), // Seen indicator
+          ],
+        ),
+      );
+    } else if (message.fileType == 'pdf') {
+      String fileName = message.fileName ?? 'Unknown.pdf';
+      return Align(
+        alignment: message.sender == widget.userModel.uid
+            ? Alignment.centerRight
+            : Alignment.centerLeft,
+        child: Column(
+          crossAxisAlignment: message.sender == widget.userModel.uid
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          children: [
+            GestureDetector(
+              onLongPress: () {
+                _showDeleteDialog(message.messageid!);
+              },
+              onTap: () async {
+                try {
+                  await _launchURL(message.fileUrl!);
+                } catch (e) {
+                  log.e('Could not launch ${message.fileUrl!}');
+                }
+              },
+              child: Container(
+                margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                width: 140,
+                padding: EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey, width: 3),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.picture_as_pdf, size: 50, color: Colors.red),
+                    Text(
+                      fileName,
+                      style: TextStyle(fontSize: 12),
+                      textAlign: TextAlign.center,
+                    ),
+                    SizedBox(height: 5),
+                    Text(
+                      'Open PDF',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Text(
+              formattedTime,
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            if (message.seen)
+              Icon(Icons.visibility, color: Colors.blue, size: 16), // Seen indicator
+          ],
+        ),
+      );
     }
-  },
-  child: Container(
-    margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-    width: 140,
-    padding: EdgeInsets.all(10),
-    decoration: BoxDecoration(
-      border: Border.all(color: Colors.grey, width: 3),
-      borderRadius: BorderRadius.circular(8),
-    ),
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(Icons.picture_as_pdf, size: 50, color: Colors.red),
-        Text(
-                  fileName, // Display the filename here
-                  style: TextStyle(fontSize: 12),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: 5),
-                Text(
-                  'Open PDF',
-                  style: TextStyle(fontSize: 14),
-                ),
-      ],
-    ),
-  ),
-),
-
-        );
-      }
-    } else if (message.cipherText != null && message.cipherText!.isNotEmpty) {
-      return FutureBuilder<String>(
-        future: decryptMessage(message.cipherText!),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
-          } else if (snapshot.hasError) {
-            return Text("Error: ${snapshot.error}");
-          } else {
-            return  GestureDetector(
+  } else if (message.cipherText != null && message.cipherText!.isNotEmpty) {
+    return FutureBuilder<String>(
+      future: decryptMessage(message.cipherText!),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        } else if (snapshot.hasError) {
+          return Text("Error: ${snapshot.error}");
+        } else {
+          return GestureDetector(
             onLongPress: () {
-              print("Long press detected on message ID: ${message.messageid}");
               _showDeleteDialog(message.messageid!);
             },
-            child:Align(
+            child: Align(
               alignment: message.sender == widget.userModel.uid
                   ? Alignment.centerRight
                   : Alignment.centerLeft,
-              child: Container(
-                margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                padding: EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-                decoration: BoxDecoration(
-                  color: message.sender == widget.userModel.uid
-                      ? Colors.grey[300]
-                      : Theme.of(context).colorScheme.secondary,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  snapshot.data ?? '',
-                  style: TextStyle(fontSize: 16, color: Colors.black),
-                ),
-              ),
-            ),
-            );
-          }
-        },
-      );
-    }
-    return Container(); // Default empty container
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            CircleAvatar(
-              backgroundColor: Colors.grey[300],
-              backgroundImage: NetworkImage(widget.targetUser.profilepic!),
-            ),
-            SizedBox(width: 10),
-            Text(widget.targetUser.fullname!),
-          ],
-        ),
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: Container(
-                padding: EdgeInsets.symmetric(horizontal: 10),
-                child: StreamBuilder(
-                  stream: FirebaseFirestore.instance
-                      .collection("chatrooms")
-                      .doc(widget.chatroom.chatroomid)
-                      .collection("messages")
-                      .orderBy("createdon", descending: true)
-                      .snapshots(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.active) {
-                      if (snapshot.hasData) {
-                        QuerySnapshot dataSnapshot =
-                            snapshot.data as QuerySnapshot;
-
-                        return ListView.builder(
-                          reverse: true,
-                          itemCount: dataSnapshot.docs.length,
-                          itemBuilder: (context, index) {
-                            MessageModel currentMessage = MessageModel.fromMap(
-                                dataSnapshot.docs[index].data()
-                                    as Map<String, dynamic>);
-
-                            return _buildMessage(currentMessage);
-                          },
-                        );
-                      } else if (snapshot.hasError) {
-                        return Center(
-                          child: Text(
-                              "An error occurred! Please check your internet connection."),
-                        );
-                      } else {
-                        return Center(
-                          child: Text("Say Hi to your new friend"),
-                        );
-                      }
-                    } else {
-                      return Center(
-                        child: CircularProgressIndicator(),
-                      );
-                    }
-                  },
-                ),
-              ),
-            ),
-            Container(
-              color: Colors.grey[200],
-              padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: message.sender == widget.userModel.uid
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
                 children: [
-                  IconButton(
-                    onPressed: _pickImageOrVideoOrPDF,
-                    icon: Icon(Icons.attach_file),
-                  ),
-                  Flexible(
-                    child: TextField(
-                      controller: messageController,
-                      maxLines: null,
-                      decoration: InputDecoration(
-                        hintText: "Enter message",
-                        border: InputBorder.none,
-                      ),
+                  Container(
+                    margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                    padding: EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                    decoration: BoxDecoration(
+                      color: message.sender == widget.userModel.uid
+                          ? Colors.grey[300]
+                          : Theme.of(context).colorScheme.secondary,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      snapshot.data ?? '',
+                      style: TextStyle(fontSize: 16, color: Colors.black),
                     ),
                   ),
-                  IconButton(
-                    onPressed: sendMessage,
-                    icon: Icon(Icons.send, color: Colors.blue),
+                  Text(
+                    formattedTime,
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
+                  if (message.seen)
+                    Icon(Icons.visibility, color: Colors.blue, size: 16), // Seen indicator
                 ],
               ),
             ),
-          ],
-        ),
-      ),
+          );
+        }
+      },
     );
   }
+  return Container(); // Default empty container
 }
 
+
+@override
+Widget build(BuildContext context) {
+  return Scaffold(
+    appBar: AppBar(
+      title: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: Colors.grey[300],
+            backgroundImage: NetworkImage(widget.targetUser.profilepic!),
+          ),
+          SizedBox(width: 10),
+          Text(widget.targetUser.fullname!),
+        ],
+      ),
+    ),
+    body: SafeArea(
+      child: Column(
+        children: [
+          Expanded(
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 10),
+              child: StreamBuilder(
+                stream: FirebaseFirestore.instance
+                    .collection("chatrooms")
+                    .doc(widget.chatroom.chatroomid)
+                    .collection("messages")
+                    .orderBy("createdon", descending: true)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.active) {
+                    if (snapshot.hasData) {
+                      QuerySnapshot dataSnapshot =
+                          snapshot.data as QuerySnapshot;
+
+                      return ListView.builder(
+                        reverse: true,
+                        itemCount: dataSnapshot.docs.length,
+                        itemBuilder: (context, index) {
+                          MessageModel currentMessage = MessageModel.fromMap(
+                              dataSnapshot.docs[index].data()
+                                  as Map<String, dynamic>);
+
+                          return _buildMessage(currentMessage);
+                        },
+                      );
+                    } else if (snapshot.hasError) {
+                      return Center(
+                        child: Text(
+                            "An error occurred! Please check your internet connection."),
+                      );
+                    } else {
+                      return Center(
+                        child: Text("Say Hi to your new friend"),
+                      );
+                    }
+                  } else {
+                    return Center(
+                      child: CircularProgressIndicator(),
+                    );
+                  }
+                },
+              ),
+            ),
+          ),
+          Container(
+            color: Colors.grey[200],
+            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            child: Row(
+              children: [
+                IconButton(
+                  onPressed: _pickImageOrVideoOrPDF,
+                  icon: Icon(Icons.attach_file),
+                ),
+                Flexible(
+                  child: TextField(
+                    controller: messageController,
+                    maxLines: null,
+                    decoration: InputDecoration(
+                      hintText: "Enter message",
+                      border: InputBorder.none,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () {
+                    sendMessage();
+                  },
+                  icon: Icon(Icons.send),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+}
 class VideoThumbnailWidget extends StatefulWidget {
   final String videoUrl;
 
