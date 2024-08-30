@@ -5,7 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:chat_app_lattice/models/UIHelper.dart';
 import 'package:chat_app_lattice/models/UserModel.dart';
 import 'package:chat_app_lattice/pages/CompleteProfile.dart';
-
+import 'package:chat_app_lattice/encryption/lwe.dart';
 
 class SignUpPage extends StatefulWidget {
   const SignUpPage({ Key? key }) : super(key: key);
@@ -15,7 +15,8 @@ class SignUpPage extends StatefulWidget {
 }
 
 class _SignUpPageState extends State<SignUpPage> {
-
+  final LWE lwe = LWE(); // Initialize the lwe instance
+  final KeyManagement keyManagement = KeyManagement();
   TextEditingController emailController = TextEditingController();
   TextEditingController passwordController = TextEditingController();
   TextEditingController cPasswordController = TextEditingController();
@@ -46,38 +47,72 @@ class _SignUpPageState extends State<SignUpPage> {
     try {
       credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
           email: email, password: password);
+      print("User credential received: $credential");
     } on FirebaseAuthException catch (ex) {
       Navigator.pop(context);
-
+      print("Error during sign up: ${ex.message}");
       UIHelper.showAlertDialog(
-          context, "An error occured", ex.message.toString());
+          context, "An error occurred", ex.message.toString());
+      return; // Exit the function if there's an error
     }
 
     if (credential != null) {
       String uid = credential.user!.uid;
       UserModel newUser = UserModel(
-          uid: uid,
-          email: email,
-          fullname: "",
-          profilepic: ""
+        uid: uid,
+        email: email,
+        fullname: "",
+        profilepic: "",
       );
-      await FirebaseFirestore.instance.collection("users").doc(uid).set(
-          newUser.toMap()).then((value) {
-        print("New User Created!");
+
+      try {
+        // Generate keys using LWE
+        Map<String, List<int>> keys = lwe.publicKey();
+
+        // Store private keys locally
+        await lwe.storeKeys(keys);
+        print("Private keys stored locally.");
+
+        // Assign public keys to the user model
+        newUser.pk = keys['pk'];
+        newUser.pk_t = keys['pk_t'];
+        newUser.A = keys['A'];
+        print("Public keys assigned to user model.");
+
+        // Save the user model to Firestore
+        await FirebaseFirestore.instance.collection("users").doc(uid).set(newUser.toMap());
+        print("User data uploaded to Firestore.");
+
+        // Navigate to the CompleteProfile page
         Navigator.popUntil(context, (route) => route.isFirst);
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-              builder: (context) {
-                return CompleteProfile(
-                    userModel: newUser, firebaseUser: credential!.user!);
-              }
-          ),
+       final user = credential.user;
+
+if (user != null) {
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(
+      builder: (context) {
+        return CompleteProfile(
+          userModel: newUser,
+          firebaseUser: user,
         );
-      });
+      },
+    ),
+  );
+} else {
+  // Handle null case
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('Failed to sign in. Please try again.')),
+  );
+}
+
+      } catch (e) {
+        Navigator.pop(context);
+        print("Exception during sign-up: $e");
+        UIHelper.showAlertDialog(context, "Error", "An error occurred during sign up. Please try again.");
+      }
     }
   }
-
 
   @override
   Widget build(BuildContext context) {

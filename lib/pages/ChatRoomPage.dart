@@ -190,56 +190,73 @@ void _incrementUnreadMessageCount(String chatroomId, String receiverId) async {
     return;
   }
 
-  if (msg != "") {
-    final keys = await lwe.getKeys();
+  if (msg.isNotEmpty) {
+    // Identify the recipient based on the chatroom's participants
+    String recipientId = widget.chatroom.participants!.keys.firstWhere(
+        (key) => key != widget.userModel.uid,
+        orElse: () => '');
 
-    final pk = keys['pk'];
-    final pk_t = keys['pk_t'];
-    final A = keys['A'];
+    if (recipientId.isNotEmpty) {
+      try {
+        // Fetch recipient's public key
+        Map<String, List<int>> publicKey = await lwe.getRecipientPublicKey(recipientId);
 
-    final storedBits = lwe.stringToBits(msg);
-    final encrypted = lwe.encryption(storedBits!, pk!, pk_t!, A!);
+        if (publicKey['pk']!.isNotEmpty && publicKey['pk_t']!.isNotEmpty && publicKey['A']!.isNotEmpty) {
+          // Encrypt the message using the recipient's public key
+          final storedBits = lwe.stringToBits(msg);
+          final encrypted = lwe.encryption(storedBits!, publicKey['pk']!, publicKey['pk_t']!, publicKey['A']!);
 
-    String encryptedText = jsonEncode(encrypted['encryptedText']);
-    log.i("Encrypted Text: $encryptedText");
+          String encryptedText = jsonEncode(encrypted['encryptedText']);
+          log.i("Encrypted Text: $encryptedText");
 
-    MessageModel newMessage = MessageModel(
-      messageid: uuid.v1(),
-      sender: widget.userModel.uid,
-      createdon: Timestamp.now().toDate(), // Convert Timestamp to DateTime
-      text: msg,
-      cipherText: encryptedText,
-      fileUrl: null,
-      fileType: null,
-      seen: false,
-    );
+          MessageModel newMessage = MessageModel(
+            messageid: uuid.v1(),
+            sender: widget.userModel.uid,
+            createdon: Timestamp.now().toDate(),
+            text: msg,
+            cipherText: encryptedText,
+            fileUrl: null,
+            fileType: null,
+            seen: false,
+          );
 
-    await FirebaseFirestore.instance
-        .collection("chatrooms")
-        .doc(widget.chatroom.chatroomid)
-        .collection("messages")
-        .doc(newMessage.messageid)
-        .set(newMessage.toMap());
+          await FirebaseFirestore.instance
+              .collection("chatrooms")
+              .doc(widget.chatroom.chatroomid)
+              .collection("messages")
+              .doc(newMessage.messageid)
+              .set(newMessage.toMap());
 
-    widget.chatroom.lastMessage = msg;
-    widget.chatroom.lastMessageType = 'text'; // Set message type
-    widget.chatroom.lastMessageContent = msg;
-    widget.chatroom.lastMessageTimestamp = Timestamp.now(); // Set timestamp
-    widget.chatroom.lastMessageId = newMessage.messageid; // Set last message ID
+          widget.chatroom.lastMessage = msg;
+          widget.chatroom.lastMessageType = 'text';
+          widget.chatroom.lastMessageContent = msg;
+          widget.chatroom.lastMessageTimestamp = Timestamp.now();
+          widget.chatroom.lastMessageId = newMessage.messageid;
 
-    if (widget.chatroom.chatroomid != null) {
-      String receiverId = widget.chatroom.participants!.keys.firstWhere((key) => key != widget.userModel.uid);
-      _incrementUnreadMessageCount(widget.chatroom.chatroomid!, receiverId);
+          // Increment unread message count for the recipient
+          FirebaseFirestore.instance
+              .collection("chatrooms")
+              .doc(widget.chatroom.chatroomid)
+              .update({"unreadMessageCount.$recipientId": FieldValue.increment(1)});
+
+          await FirebaseFirestore.instance
+              .collection("chatrooms")
+              .doc(widget.chatroom.chatroomid)
+              .set(widget.chatroom.toMap(), SetOptions(merge: true));
+
+          log.i("Message Sent!");
+        } else {
+          log.e("Public key data is missing for recipient.");
+        }
+      } catch (e) {
+        log.e("Failed to fetch recipient's public key: $e");
+      }
+    } else {
+      log.e("Recipient ID could not be determined.");
     }
-
-    await FirebaseFirestore.instance
-        .collection("chatrooms")
-        .doc(widget.chatroom.chatroomid)
-        .set(widget.chatroom.toMap(), SetOptions(merge: true)); // Merge updates
-
-    log.i("Message Sent!");
   }
 }
+
 
 
 
@@ -312,7 +329,7 @@ void initState() {
 
   Future<String> decryptMessage(String cipherText) async {
     try {
-      final keys = await lwe.getKeys();
+      final keys = await lwe.getPrivateKeys();
       final List<int> sk = keys['sk'] ?? [];
       final List<int> sk_t = keys['sk_t'] ?? [];
 

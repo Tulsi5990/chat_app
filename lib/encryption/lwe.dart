@@ -2,6 +2,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:math';
 import 'package:logger/logger.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:chat_app_lattice/models/UserModel.dart';
+
 
 class LWE {
   final int prime = 1523;
@@ -207,41 +210,68 @@ class LWE {
     return result;
   }
 
-  Future<void> storeKeys(Map<String, List<int>> keys) async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    log.i("Storing keys: $keys");
-    prefs.setString('sk', jsonEncode(keys['sk']));
-    prefs.setString('sk_t', jsonEncode(keys['sk_t']));
-    prefs.setString('pk', jsonEncode(keys['pk']));
-    prefs.setString('pk_t', jsonEncode(keys['pk_t']));
-    prefs.setString('A', jsonEncode(keys['A']));
+Future<void> storeKeys(Map<String, List<int>> keys) async {
+  final SharedPreferences prefs = await SharedPreferences.getInstance();
+  log.i("Storing private keys: $keys");
+  
+  // Store private keys only
+  prefs.setString('sk', jsonEncode(keys['sk']));
+  prefs.setString('sk_t', jsonEncode(keys['sk_t']));
+}
+
+
+
+
+Future<Map<String, List<int>>> getPrivateKeys() async {
+  final SharedPreferences prefs = await SharedPreferences.getInstance();
+  String? skString = prefs.getString('sk');
+  String? sk_tString = prefs.getString('sk_t');
+
+  if (skString == null || sk_tString == null) {
+    throw Exception("Private keys not found in local storage");
   }
 
-  Future<Map<String, List<int>>> getKeys() async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? skString = prefs.getString('sk');
-    String? sk_tString = prefs.getString('sk_t');
-    String? pkString = prefs.getString('pk');
-    String? pk_tString = prefs.getString('pk_t');
-    String? AString = prefs.getString('A');
+  final privateKeys = {
+    "sk": List<int>.from(jsonDecode(skString)),
+    "sk_t": List<int>.from(jsonDecode(sk_tString)),
+  };
 
-    // log.i("Retrieving keys from storage...");
+  log.i("Retrieved private keys: $privateKeys");
+  return privateKeys;
+}
 
-    if (skString == null || sk_tString == null || pkString == null || pk_tString == null || AString == null) {
-      throw Exception("Keys not found in local storage");
+
+Future<Map<String, List<int>>> getRecipientPublicKey(String recipientUid) async {
+  log.i("Fetching public key for recipient UID: $recipientUid");
+
+  DocumentSnapshot userDoc = await FirebaseFirestore.instance.collection("users").doc(recipientUid).get();
+
+  if (userDoc.exists) {
+    UserModel recipient = UserModel.fromMap(userDoc.data() as Map<String, dynamic>);
+
+    log.i("Recipient data fetched: ${recipient.toMap()}");
+
+    List<int> pk = recipient.pk ?? [];
+    List<int> pk_t = recipient.pk_t ?? [];
+    List<int> A = recipient.A ?? [];
+
+    if (pk.isEmpty || pk_t.isEmpty || A.isEmpty) {
+      log.e("Public key data is incomplete for recipient UID: $recipientUid");
+      throw Exception("One or more public key fields are empty.");
     }
 
-    final keys = {
-      "sk": List<int>.from(jsonDecode(skString)),
-      "sk_t": List<int>.from(jsonDecode(sk_tString)),
-      "pk": List<int>.from(jsonDecode(pkString)),
-      "pk_t": List<int>.from(jsonDecode(pk_tString)),
-      "A": List<int>.from(jsonDecode(AString)),
+    return {
+      "pk": pk,
+      "pk_t": pk_t,
+      "A": A,
     };
-
-    log.i("Retrieved keys: $keys");
-    return keys;
+  } else {
+    log.e("Recipient's document does not exist for UID: $recipientUid");
+    throw Exception("Recipient's public key not found");
   }
+}
+
+
 }
 
 // class KeyManagement {
@@ -259,16 +289,19 @@ class KeyManagement {
   final LWE lwe = LWE();
   final Logger log = Logger();
 
-  Future<void> generateAndStoreKeys() async {
+  Future<Map<String, List<int>>> generateAndStoreKeys() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    bool keysExist = prefs.containsKey('sk') && prefs.containsKey('sk_t') && prefs.containsKey('pk') && prefs.containsKey('pk_t') && prefs.containsKey('A');
+    bool keysExist = prefs.containsKey('sk') && prefs.containsKey('sk_t');
 
     if (!keysExist) {
       log.i("Generating and storing new keys...");
       Map<String, List<int>> keys = lwe.publicKey();
       await lwe.storeKeys(keys);
+      log.i("Keys generated and stored successfully.");
+      return keys;
     } else {
-      log.i("Keys already exist. No need to generate new keys.");
+      log.i("Keys already exist. Loading existing private keys.");
+      return await lwe.getPrivateKeys();
     }
   }
 }
