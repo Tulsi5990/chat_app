@@ -178,11 +178,17 @@ void _incrementUnreadMessageCount(String chatroomId, String receiverId) async {
   if (pickedFile != null) {
     File file = File(pickedFile!.path);
     String messageId = uuid.v1();
-    String fileType = pickedFile!.path.endsWith('.mp4')
-        ? 'video'
-        : pickedFile!.path.endsWith('.pdf')
-            ? 'pdf'
-            : 'image';
+    String fileType;
+
+    if (pickedFile!.path.endsWith('.mp4')) {
+      fileType = 'video';
+    } else if (pickedFile!.path.endsWith('.pdf')) {
+      fileType = 'pdf';
+    } else {
+      fileType = 'image';
+    }
+
+    // Handle file upload
     await uploadFile(file, widget.chatroom.chatroomid!, messageId, fileType);
     setState(() {
       pickedFile = null;
@@ -191,10 +197,11 @@ void _incrementUnreadMessageCount(String chatroomId, String receiverId) async {
   }
 
   if (msg.isNotEmpty) {
-    // Identify the recipient based on the chatroom's participants
     String recipientId = widget.chatroom.participants!.keys.firstWhere(
         (key) => key != widget.userModel.uid,
         orElse: () => '');
+
+    MessageModel newMessage;
 
     if (recipientId.isNotEmpty) {
       try {
@@ -209,53 +216,59 @@ void _incrementUnreadMessageCount(String chatroomId, String receiverId) async {
           String encryptedText = jsonEncode(encrypted['encryptedText']);
           log.i("Encrypted Text: $encryptedText");
 
-          MessageModel newMessage = MessageModel(
+          // Create message model with the encrypted text for receiver
+          newMessage = MessageModel(
             messageid: uuid.v1(),
             sender: widget.userModel.uid,
             createdon: Timestamp.now().toDate(),
-            text: msg,
-            cipherText: encryptedText,
+            text: msg, // Normal text for sender's side
+            cipherText: encryptedText, // Encrypted text for receiver's side
             fileUrl: null,
             fileType: null,
             seen: false,
           );
-
-          await FirebaseFirestore.instance
-              .collection("chatrooms")
-              .doc(widget.chatroom.chatroomid)
-              .collection("messages")
-              .doc(newMessage.messageid)
-              .set(newMessage.toMap());
-
-          widget.chatroom.lastMessage = msg;
-          widget.chatroom.lastMessageType = 'text';
-          widget.chatroom.lastMessageContent = msg;
-          widget.chatroom.lastMessageTimestamp = Timestamp.now();
-          widget.chatroom.lastMessageId = newMessage.messageid;
-
-          // Increment unread message count for the recipient
-          FirebaseFirestore.instance
-              .collection("chatrooms")
-              .doc(widget.chatroom.chatroomid)
-              .update({"unreadMessageCount.$recipientId": FieldValue.increment(1)});
-
-          await FirebaseFirestore.instance
-              .collection("chatrooms")
-              .doc(widget.chatroom.chatroomid)
-              .set(widget.chatroom.toMap(), SetOptions(merge: true));
-
-          log.i("Message Sent!");
         } else {
           log.e("Public key data is missing for recipient.");
+          return;
         }
       } catch (e) {
         log.e("Failed to fetch recipient's public key: $e");
+        return;
       }
     } else {
       log.e("Recipient ID could not be determined.");
+      return;
     }
+
+    // Save the message to Firestore
+    await FirebaseFirestore.instance
+        .collection("chatrooms")
+        .doc(widget.chatroom.chatroomid)
+        .collection("messages")
+        .doc(newMessage.messageid)
+        .set(newMessage.toMap());
+
+    widget.chatroom.lastMessage = "sent a message";
+    widget.chatroom.lastMessageType = 'text';
+    widget.chatroom.lastMessageContent = "sent a message";
+    widget.chatroom.lastMessageTimestamp = Timestamp.now();
+    widget.chatroom.lastMessageId = newMessage.messageid;
+
+    // Increment unread message count for the recipient
+    FirebaseFirestore.instance
+        .collection("chatrooms")
+        .doc(widget.chatroom.chatroomid)
+        .update({"unreadMessageCount.$recipientId": FieldValue.increment(1)});
+
+    await FirebaseFirestore.instance
+        .collection("chatrooms")
+        .doc(widget.chatroom.chatroomid)
+        .set(widget.chatroom.toMap(), SetOptions(merge: true));
+
+    log.i("Message Sent!");
   }
 }
+
 
 
 
@@ -627,39 +640,73 @@ Widget _buildMessage(MessageModel message) {
       );
     }
   } else if (message.cipherText != null && message.cipherText!.isNotEmpty) {
-    return FutureBuilder<String>(
-      future: decryptMessage(message.cipherText!),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(child: CircularProgressIndicator());
-        } else if (snapshot.hasError) {
-          return Text("Error: ${snapshot.error}");
-        } else {
-          return GestureDetector(
-            onLongPress: () {
-              _showDeleteDialog(message.messageid!);
-            },
-            child: Align(
-              alignment: message.sender == widget.userModel.uid
-                  ? Alignment.centerRight
-                  : Alignment.centerLeft,
+     bool isSender = message.sender == widget.userModel.uid;
+
+    if (isSender) {
+      // For the sender, show the normal text without decryption
+      return Align(
+        alignment: Alignment.centerRight,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            GestureDetector(
+              onLongPress: () {
+                _showDeleteDialog(message.messageid!);
+              },
+              child: Container(
+                margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                padding: EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+                decoration: BoxDecoration(
+                  color: Colors.blueAccent,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  message.text!,
+                  style: TextStyle(fontSize: 16, color: Colors.white),
+                ),
+              ),
+            ),
+            Text(
+              formattedTime,
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            if (message.seen)
+              Icon(Icons.visibility, color: Colors.blue, size: 16), // Seen indicator
+          ],
+        ),
+      );
+    } else {
+      // For the receiver, decrypt and display the message
+      return FutureBuilder<String>(
+        future: decryptMessage(message.cipherText!),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return CircularProgressIndicator();
+          } else if (snapshot.hasError) {
+            return Text("Error decrypting message: ${snapshot.error}");
+          } else {
+            String decryptedMessage = snapshot.data ?? "Error decrypting message";
+
+            return Align(
+              alignment: Alignment.centerLeft,
               child: Column(
-                crossAxisAlignment: message.sender == widget.userModel.uid
-                    ? CrossAxisAlignment.end
-                    : CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                    padding: EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-                    decoration: BoxDecoration(
-                      color: message.sender == widget.userModel.uid
-                          ? Colors.grey[300]
-                          : Theme.of(context).colorScheme.secondary,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      snapshot.data ?? '',
-                      style: TextStyle(fontSize: 16, color: Colors.black),
+                  GestureDetector(
+                    onLongPress: () {
+                      _showDeleteDialog(message.messageid!);
+                    },
+                    child: Container(
+                      margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                      padding: EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        decryptedMessage,
+                        style: TextStyle(fontSize: 16, color: Colors.black),
+                      ),
                     ),
                   ),
                   Text(
@@ -670,11 +717,11 @@ Widget _buildMessage(MessageModel message) {
                     Icon(Icons.visibility, color: Colors.blue, size: 16), // Seen indicator
                 ],
               ),
-            ),
-          );
-        }
-      },
-    );
+            );
+          }
+        },
+      );
+    }
   }
   return Container(); // Default empty container
 }
