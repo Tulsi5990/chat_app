@@ -33,6 +33,7 @@ import 'package:cloud_firestore/cloud_firestore.dart'; // Ensure this import is 
 class MessageModel {
   final String? messageid;
   final String? sender;
+  final String? reciever;
   final DateTime? createdon;
   final String? text;
   final String? cipherText;
@@ -45,6 +46,7 @@ class MessageModel {
   MessageModel({
     this.messageid,
     this.sender,
+    this.reciever,
     this.text,
     this.seen=false,
     this.createdon,
@@ -59,6 +61,7 @@ class MessageModel {
     return MessageModel(
       messageid: data['messageid'],
       sender: data['sender'],
+      reciever: data['reciever'],
       text: data['text'],
       seen: data['seen']??false,
       createdon: (data['createdon'] as Timestamp).toDate(), // Correct usage
@@ -74,6 +77,7 @@ class MessageModel {
     return {
       'messageid': messageid,
       'sender': sender,
+      'reciever':reciever,
       'text': text,
       'seen': seen,
       'createdon': createdon != null ? Timestamp.fromDate(createdon!) : null, // Correct usage

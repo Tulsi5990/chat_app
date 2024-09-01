@@ -168,6 +168,59 @@ void _incrementUnreadMessageCount(String chatroomId, String receiverId) async {
 
 
 
+// Listen to changes in the 'seen' field for the last message in the chatroom
+void _listenForSeenUpdates() {
+  FirebaseFirestore.instance
+      .collection('chatrooms')
+      .doc(widget.chatroom.chatroomid)
+      .collection('messages')
+      .orderBy('createdon', descending: true)
+      .limit(1)
+      .snapshots()
+      .listen((snapshot) {
+    if (snapshot.docs.isNotEmpty) {
+      final messageData = snapshot.docs.first.data();
+      
+      // Check if the message is seen and sent by the current user
+      if (messageData['seen'] == true && messageData['sender'] == widget.userModel.uid) {
+        // Trigger UI update to show the seen icon
+        setState(() {
+          _lastMessageSeen = true;
+        });
+        print("Message seen status updated for message ID: ${snapshot.docs.first.id}");
+      } else {
+        print("No seen status update needed.");
+      }
+    } else {
+      print("No messages found.");
+    }
+  });
+}
+
+bool _lastMessageSeen = false; // State variable to manage UI updates
+
+@override
+void initState() {
+  super.initState();
+  markMessagesAsSeen();
+  if (widget.chatroom.chatroomid != null) {
+    _resetUnreadMessageCount();
+    _listenForSeenUpdates(); // Start listening for seen updates
+  }
+}
+
+
+// void _incrementUnreadMessageCount(String receiverId) async {
+//     if (widget.chatroom.chatroomid != null) {
+//       await FirebaseFirestore.instance
+//           .collection("chatrooms")
+//           .doc(widget.chatroom.chatroomid)
+//           .update({
+//         "unreadMessageCount.$receiverId": FieldValue.increment(1),
+//       });
+//     }
+//   }
+
 
 
 
@@ -255,10 +308,9 @@ void _incrementUnreadMessageCount(String chatroomId, String receiverId) async {
     widget.chatroom.lastMessageId = newMessage.messageid;
 
     // Increment unread message count for the recipient
-    FirebaseFirestore.instance
-        .collection("chatrooms")
-        .doc(widget.chatroom.chatroomid)
-        .update({"unreadMessageCount.$recipientId": FieldValue.increment(1)});
+     _incrementUnreadMessageCount(widget.chatroom.chatroomid!, recipientId);
+
+    
 
     await FirebaseFirestore.instance
         .collection("chatrooms")
@@ -275,31 +327,53 @@ void _incrementUnreadMessageCount(String chatroomId, String receiverId) async {
 
 
 
-
-
-
-
-
 void markMessagesAsSeen() async {
+  print("markMessagesAsSeen() called");  // Debugging statement
   final user = FirebaseAuth.instance.currentUser;
+
+  // Get the recipient ID by finding the participant who is not the current user
+  String recipientId = widget.chatroom.participants!.keys.firstWhere(
+        (key) => key != widget.userModel.uid,
+        orElse: () => '');
+
   if (user != null) {
+    // Check if the current user is the recipient
+    if (user.uid != recipientId) {
+      // Do not mark as seen if the current user is not the recipient
+      print("Current user is not the recipient, no need to update seen status.");
+      return;
+    }
+
+    // Proceed with marking messages as seen
     await FirebaseFirestore.instance
         .collection('chatrooms')
         .doc(widget.chatroom.chatroomid)
         .collection('messages')
-        .where('receiver', isEqualTo: user.uid)
+        .where('reciever', isEqualTo: user.uid)
         .where('seen', isEqualTo: false)
         .get()
         .then((snapshot) {
       for (var doc in snapshot.docs) {
-        doc.reference.update({'seen': true});
+        print("Updating seen status for message: ${doc.id}");  // Debugging statement
+        doc.reference.update({'seen': true}).catchError((error) {
+          print('Failed to update seen status: $error');
+        });
       }
+    }).catchError((error) {
+      print('Failed to fetch unread messages: $error');
     });
 
-    // Reset unread message count after marking messages as seen
     _resetUnreadMessageCount();
   }
 }
+
+
+
+
+
+
+
+
 
 
 void _updateUnreadMessageCount() async {
@@ -315,26 +389,22 @@ void _updateUnreadMessageCount() async {
 }
 
 // Reset the unread message count when the receiver opens the chat room
-void _resetUnreadMessageCount() async {
-  if (widget.chatroom.chatroomid != null) {
-    await FirebaseFirestore.instance
-        .collection("chatrooms")
-        .doc(widget.chatroom.chatroomid)
-        .update({
-      "unreadMessageCount.${widget.userModel.uid}": 0,
-    });
+  void _resetUnreadMessageCount() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      if (widget.chatroom.chatroomid != null) {
+        await FirebaseFirestore.instance
+            .collection("chatrooms")
+            .doc(widget.chatroom.chatroomid)
+            .update({
+          "unreadMessageCount.${user.uid}": 0,
+        });
+      }
+    }
   }
-}
 
 
-@override
-void initState() {
-  super.initState();
-  markMessagesAsSeen(); 
- if (widget.chatroom.chatroomid != null) {
-  _resetUnreadMessageCount(); // Use the non-null assertion operator
-}// Call when the chat page is opened
-}
+
 
 
 
@@ -478,20 +548,17 @@ Future<void> _deleteMessage(String messageId) async {
 
 
 
-
 Widget _buildMessage(MessageModel message) {
   String formattedTime = formatTimestamp(Timestamp.fromDate(message.createdon!));
+  bool isSender = message.sender == widget.userModel.uid;
 
   if (message.fileUrl != null) {
+    // For media files (image, video, pdf)
     if (message.fileType == 'image') {
       return Align(
-        alignment: message.sender == widget.userModel.uid
-            ? Alignment.centerRight
-            : Alignment.centerLeft,
+        alignment: isSender ? Alignment.centerRight : Alignment.centerLeft,
         child: Column(
-          crossAxisAlignment: message.sender == widget.userModel.uid
-              ? CrossAxisAlignment.end
-              : CrossAxisAlignment.start,
+          crossAxisAlignment: isSender ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             GestureDetector(
               onLongPress: () {
@@ -526,24 +593,25 @@ Widget _buildMessage(MessageModel message) {
                 ),
               ),
             ),
-            Text(
-              formattedTime,
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  formattedTime,
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                if (isSender && message.seen)
+                  Icon(Icons.visibility, color: Colors.blue, size: 16), // Seen indicator for sender
+              ],
             ),
-            if (message.seen)
-              Icon(Icons.visibility, color: Colors.blue, size: 16), // Seen indicator
           ],
         ),
       );
     } else if (message.fileType == 'video') {
       return Align(
-        alignment: message.sender == widget.userModel.uid
-            ? Alignment.centerRight
-            : Alignment.centerLeft,
+        alignment: isSender ? Alignment.centerRight : Alignment.centerLeft,
         child: Column(
-          crossAxisAlignment: message.sender == widget.userModel.uid
-              ? CrossAxisAlignment.end
-              : CrossAxisAlignment.start,
+          crossAxisAlignment: isSender ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             GestureDetector(
               onLongPress: () {
@@ -572,25 +640,26 @@ Widget _buildMessage(MessageModel message) {
                 ),
               ),
             ),
-            Text(
-              formattedTime,
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  formattedTime,
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                if (isSender && message.seen)
+                  Icon(Icons.visibility, color: Colors.blue, size: 16), // Seen indicator for sender
+              ],
             ),
-            if (message.seen)
-              Icon(Icons.visibility, color: Colors.blue, size: 16), // Seen indicator
           ],
         ),
       );
     } else if (message.fileType == 'pdf') {
       String fileName = message.fileName ?? 'Unknown.pdf';
       return Align(
-        alignment: message.sender == widget.userModel.uid
-            ? Alignment.centerRight
-            : Alignment.centerLeft,
+        alignment: isSender ? Alignment.centerRight : Alignment.centerLeft,
         child: Column(
-          crossAxisAlignment: message.sender == widget.userModel.uid
-              ? CrossAxisAlignment.end
-              : CrossAxisAlignment.start,
+          crossAxisAlignment: isSender ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             GestureDetector(
               onLongPress: () {
@@ -629,19 +698,22 @@ Widget _buildMessage(MessageModel message) {
                 ),
               ),
             ),
-            Text(
-              formattedTime,
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  formattedTime,
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                if (isSender && message.seen)
+                  Icon(Icons.visibility, color: Colors.blue, size: 16), // Seen indicator for sender
+              ],
             ),
-            if (message.seen)
-              Icon(Icons.visibility, color: Colors.blue, size: 16), // Seen indicator
           ],
         ),
       );
     }
   } else if (message.cipherText != null && message.cipherText!.isNotEmpty) {
-     bool isSender = message.sender == widget.userModel.uid;
-
     if (isSender) {
       // For the sender, show the normal text without decryption
       return Align(
@@ -666,12 +738,17 @@ Widget _buildMessage(MessageModel message) {
                 ),
               ),
             ),
-            Text(
-              formattedTime,
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  formattedTime,
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                if (message.seen)
+                  Icon(Icons.remove_red_eye, color: Colors.blue, size: 16), // Seen indicator for sender
+              ],
             ),
-            if (message.seen)
-              Icon(Icons.visibility, color: Colors.blue, size: 16), // Seen indicator
           ],
         ),
       );
@@ -713,8 +790,7 @@ Widget _buildMessage(MessageModel message) {
                     formattedTime,
                     style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
-                  if (message.seen)
-                    Icon(Icons.visibility, color: Colors.blue, size: 16), // Seen indicator
+                  // No seen icon for the receiver
                 ],
               ),
             );
@@ -723,6 +799,7 @@ Widget _buildMessage(MessageModel message) {
       );
     }
   }
+
   return Container(); // Default empty container
 }
 

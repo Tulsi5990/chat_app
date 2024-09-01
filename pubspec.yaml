@@ -54,6 +54,7 @@ dependencies:
   url_launcher: ^6.1.5
   open_file: ^3.2.1
   intl: ^0.17.0
+  firebase_messaging: ^15.1.0
 
 dev_dependencies:
   flutter_test:

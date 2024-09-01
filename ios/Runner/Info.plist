@@ -7,6 +7,13 @@
   <string>http</string>
   <string>https</string>
 </array>
+    <key>UIBackgroundModes</key>
+<array>
+  <string>fetch</string>
+  <string>remote-notification</string>
+</array>
+<key>FirebaseAppDelegateProxyEnabled</key>
+<false/>
 
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
