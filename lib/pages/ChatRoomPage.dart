@@ -442,12 +442,11 @@ String formatTimestamp(Timestamp timestamp) {
   DateTime now = DateTime.now();
   DateTime date = timestamp.toDate();
   
-  // Reset time to midnight for accurate day difference comparison
-  DateTime nowMidnight = DateTime(now.year, now.month, now.day);
-  DateTime dateMidnight = DateTime(date.year, date.month, date.day);
-  
-  Duration diff = nowMidnight.difference(dateMidnight);
-  
+  DateTime todayMidnight = DateTime(now.year, now.month, now.day);
+  DateTime messageMidnight = DateTime(date.year, date.month, date.day);
+
+  Duration diff = todayMidnight.difference(messageMidnight);
+
   if (diff.inDays == 0) {
     // Today
     return DateFormat('h:mm a').format(date);
@@ -462,6 +461,7 @@ String formatTimestamp(Timestamp timestamp) {
     return '${DateFormat('MMM d, yyyy').format(date)}, ${DateFormat('h:mm a').format(date)}';
   }
 }
+
 
 
 
