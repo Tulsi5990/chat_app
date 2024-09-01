@@ -4,11 +4,13 @@ import 'dart:math';
 import 'package:logger/logger.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:chat_app_lattice/models/UserModel.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 
 class LWE {
   final int prime = 1523;
   final Logger log = Logger();
+  final FlutterSecureStorage secureStorage = FlutterSecureStorage();
 
   List<int> generateUniqueRandomNumbers(int min, int max, int count) {
     final random = Random();
@@ -211,68 +213,63 @@ class LWE {
   }
 
 Future<void> storeKeys(Map<String, List<int>> keys) async {
-  final SharedPreferences prefs = await SharedPreferences.getInstance();
-  log.i("Storing private keys: $keys");
-  
-  // Store private keys only
-  prefs.setString('sk', jsonEncode(keys['sk']));
-  prefs.setString('sk_t', jsonEncode(keys['sk_t']));
-}
+    log.i("Storing private keys: $keys");
 
-
-
-
-Future<Map<String, List<int>>> getPrivateKeys() async {
-  final SharedPreferences prefs = await SharedPreferences.getInstance();
-  String? skString = prefs.getString('sk');
-  String? sk_tString = prefs.getString('sk_t');
-
-  if (skString == null || sk_tString == null) {
-    throw Exception("Private keys not found in local storage");
+    // Store private keys securely
+    await secureStorage.write(key: 'sk', value: jsonEncode(keys['sk']));
+    await secureStorage.write(key: 'sk_t', value: jsonEncode(keys['sk_t']));
   }
 
-  final privateKeys = {
-    "sk": List<int>.from(jsonDecode(skString)),
-    "sk_t": List<int>.from(jsonDecode(sk_tString)),
-  };
+  Future<Map<String, List<int>>> getPrivateKeys() async {
+    String? skString = await secureStorage.read(key: 'sk');
+    String? sk_tString = await secureStorage.read(key: 'sk_t');
 
-  log.i("Retrieved private keys: $privateKeys");
-  return privateKeys;
-}
-
-
-Future<Map<String, List<int>>> getRecipientPublicKey(String recipientUid) async {
-  log.i("Fetching public key for recipient UID: $recipientUid");
-
-  DocumentSnapshot userDoc = await FirebaseFirestore.instance.collection("users").doc(recipientUid).get();
-
-  if (userDoc.exists) {
-    UserModel recipient = UserModel.fromMap(userDoc.data() as Map<String, dynamic>);
-
-    log.i("Recipient data fetched: ${recipient.toMap()}");
-
-    List<int> pk = recipient.pk ?? [];
-    List<int> pk_t = recipient.pk_t ?? [];
-    List<int> A = recipient.A ?? [];
-
-    if (pk.isEmpty || pk_t.isEmpty || A.isEmpty) {
-      log.e("Public key data is incomplete for recipient UID: $recipientUid");
-      throw Exception("One or more public key fields are empty.");
+    if (skString == null || sk_tString == null) {
+      throw Exception("Private keys not found in secure storage");
     }
 
-    return {
-      "pk": pk,
-      "pk_t": pk_t,
-      "A": A,
+    final privateKeys = {
+      "sk": List<int>.from(jsonDecode(skString)),
+      "sk_t": List<int>.from(jsonDecode(sk_tString)),
     };
-  } else {
-    log.e("Recipient's document does not exist for UID: $recipientUid");
-    throw Exception("Recipient's public key not found");
+
+    log.i("Retrieved private keys: $privateKeys");
+    return privateKeys;
+  }
+
+  Future<Map<String, List<int>>> getRecipientPublicKey(String recipientUid) async {
+    log.i("Fetching public key for recipient UID: $recipientUid");
+
+    DocumentSnapshot userDoc = await FirebaseFirestore.instance.collection("users").doc(recipientUid).get();
+
+    if (userDoc.exists) {
+      UserModel recipient = UserModel.fromMap(userDoc.data() as Map<String, dynamic>);
+
+      log.i("Recipient data fetched: ${recipient.toMap()}");
+
+      List<int> pk = recipient.pk ?? [];
+      List<int> pk_t = recipient.pk_t ?? [];
+      List<int> A = recipient.A ?? [];
+
+      if (pk.isEmpty || pk_t.isEmpty || A.isEmpty) {
+        log.e("Public key data is incomplete for recipient UID: $recipientUid");
+        throw Exception("One or more public key fields are empty.");
+      }
+
+      return {
+        "pk": pk,
+        "pk_t": pk_t,
+        "A": A,
+      };
+    } else {
+      log.e("User document does not exist for UID: $recipientUid");
+      throw Exception("User document does not exist.");
+    }
   }
 }
 
 
-}
+
 
 // class KeyManagement {
 //   final LWE lwe = LWE();
@@ -285,23 +282,26 @@ Future<Map<String, List<int>>> getRecipientPublicKey(String recipientUid) async 
 //   }
 // }
 
+
 class KeyManagement {
   final LWE lwe = LWE();
   final Logger log = Logger();
+  final FlutterSecureStorage secureStorage = FlutterSecureStorage();
 
   Future<Map<String, List<int>>> generateAndStoreKeys() async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    bool keysExist = prefs.containsKey('sk') && prefs.containsKey('sk_t');
+    // Check if private keys exist in secure storage
+    String? sk = await secureStorage.read(key: 'sk');
+    String? sk_t = await secureStorage.read(key: 'sk_t');
 
-    if (!keysExist) {
+    if (sk == null || sk_t == null) {
       log.i("Generating and storing new keys...");
       Map<String, List<int>> keys = lwe.publicKey();
-      await lwe.storeKeys(keys);
+      await lwe.storeKeys(keys); // Store the generated keys securely
       log.i("Keys generated and stored successfully.");
       return keys;
     } else {
       log.i("Keys already exist. Loading existing private keys.");
-      return await lwe.getPrivateKeys();
+      return await lwe.getPrivateKeys(); // Retrieve existing keys from secure storage
     }
   }
 }
