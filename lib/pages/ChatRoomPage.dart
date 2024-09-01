@@ -273,6 +273,7 @@ void initState() {
           newMessage = MessageModel(
             messageid: uuid.v1(),
             sender: widget.userModel.uid,
+            senderId: widget.userModel.uid,
             createdon: Timestamp.now().toDate(),
             text: msg, // Normal text for sender's side
             cipherText: encryptedText, // Encrypted text for receiver's side
@@ -478,7 +479,15 @@ Future<void> _launchURL(String url) async {
 
 
 
-Future<void> _showDeleteDialog(String messageId) async {
+Future<void> _showDeleteDialog(String messageId, String senderId) async {
+  // Get the current user ID
+  final currentUser = FirebaseAuth.instance.currentUser;
+
+  if (currentUser == null || currentUser.uid != senderId) {
+    // If the current user is not the sender, do nothing or show a message
+    return; // Alternatively, you can show a message like a toast saying "You can only delete your own messages."
+  }
+
   showDialog(
     context: context,
     builder: (BuildContext context) {
@@ -502,6 +511,7 @@ Future<void> _showDeleteDialog(String messageId) async {
     },
   );
 }
+
 
 Future<void> _deleteMessage(String messageId) async {
   // Get the chat room document
@@ -562,7 +572,7 @@ Widget _buildMessage(MessageModel message) {
           children: [
             GestureDetector(
               onLongPress: () {
-                _showDeleteDialog(message.messageid!);
+               _showDeleteDialog(message.messageid!, message.senderId!);
               },
               onTap: () {
                 Navigator.push(
@@ -615,7 +625,7 @@ Widget _buildMessage(MessageModel message) {
           children: [
             GestureDetector(
               onLongPress: () {
-                _showDeleteDialog(message.messageid!);
+                _showDeleteDialog(message.messageid!, message.senderId!);
               },
               onTap: () {
                 Navigator.push(
@@ -663,7 +673,7 @@ Widget _buildMessage(MessageModel message) {
           children: [
             GestureDetector(
               onLongPress: () {
-                _showDeleteDialog(message.messageid!);
+                _showDeleteDialog(message.messageid!, message.senderId!);
               },
               onTap: () async {
                 try {
@@ -723,7 +733,7 @@ Widget _buildMessage(MessageModel message) {
           children: [
             GestureDetector(
               onLongPress: () {
-                _showDeleteDialog(message.messageid!);
+                 _showDeleteDialog(message.messageid!, message.senderId!);
               },
               child: Container(
                 margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
@@ -771,7 +781,7 @@ Widget _buildMessage(MessageModel message) {
                 children: [
                   GestureDetector(
                     onLongPress: () {
-                      _showDeleteDialog(message.messageid!);
+                       _showDeleteDialog(message.messageid!, message.senderId!);
                     },
                     child: Container(
                       margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
